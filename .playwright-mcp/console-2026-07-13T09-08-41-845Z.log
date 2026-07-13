@@ -1,0 +1,16 @@
+[    1246ms] [LOG] %cWelcome to GitLab!%c
+
+Does this page need fixes or improvements? Open an issue or contribute a merge request to help make GitLab more lovable. At GitLab, everyone can contribute!
+
+🤝 Contribute to GitLab: https://about.gitlab.com/community/contribute/
+🔎 Create a new GitLab issue: https://gitlab.com/gitlab-org/gitlab/-/issues/new
+ padding-top: 0.5em; font-size: 2em; padding-bottom: 0.5em; @ https://git.tongyuan.cc/assets/webpack/hello.b7f494db.chunk.js:0
+[   23410ms] [LOG] %cWelcome to GitLab!%c
+
+Does this page need fixes or improvements? Open an issue or contribute a merge request to help make GitLab more lovable. At GitLab, everyone can contribute!
+
+🤝 Contribute to GitLab: https://about.gitlab.com/community/contribute/
+🔎 Create a new GitLab issue: https://gitlab.com/gitlab-org/gitlab/-/issues/new
+ padding-top: 0.5em; font-size: 2em; padding-bottom: 0.5em; @ https://git.tongyuan.cc/assets/webpack/hello.b7f494db.chunk.js:0
+[   23646ms] [WARNING] Canvas2D: Multiple readback operations using getImageData are faster with the willReadFrequently attribute set to true. See: https://html.spec.whatwg.org/multipage/canvas.html#concept-canvas-will-read-frequently @ https://git.tongyuan.cc/assets/webpack/main.0fac458b.chunk.js:24
+[   23862ms] [WARNING] [BootstrapVue warn]: tooltip - The provided target is no valid HTML element. @ https://git.tongyuan.cc/assets/webpack/main.0fac458b.chunk.js:68

@@ -1,0 +1,43 @@
+- generic [ref=e2]:
+  - main [ref=e4]:
+    - alert [ref=e6]:
+      - alert [ref=e10]:
+        - generic [ref=e11]: Sign in before continuing.
+    - generic [ref=e14]:
+      - generic [ref=e16]:
+        - heading "GitLab Community Edition" [level=1] [ref=e17]
+        - paragraph [ref=e19]:
+          - text: 使用 LDAP 模式登陆，自助密码服务
+          - link "http://172.16.1.20:89/" [ref=e20] [cursor=pointer]:
+            - /url: http://172.16.1.20:89/
+      - generic [ref=e24]:
+        - tablist [ref=e25]:
+          - tab "LDAP" [selected] [ref=e26] [cursor=pointer]
+          - tab "Standard" [ref=e27] [cursor=pointer]
+        - tabpanel "LDAP" [ref=e29]:
+          - generic [ref=e30]:
+            - generic [ref=e31]:
+              - generic [ref=e32]: Username
+              - textbox "Username" [active] [ref=e33]
+            - generic [ref=e34]:
+              - generic [ref=e35]: Password
+              - generic [ref=e36]:
+                - textbox "Password" [ref=e37]
+                - button "Show password" [ref=e38] [cursor=pointer]
+            - generic [ref=e42]:
+              - checkbox "Remember me" [ref=e43]
+              - generic [ref=e44] [cursor=pointer]: Remember me
+            - button "Sign in" [ref=e45] [cursor=pointer]
+  - generic [ref=e47]:
+    - separator [ref=e48]
+    - generic [ref=e49]:
+      - generic [ref=e50]:
+        - link "Explore" [ref=e51] [cursor=pointer]:
+          - /url: /explore
+        - link "Help" [ref=e52] [cursor=pointer]:
+          - /url: /help
+        - link "About GitLab" [ref=e53] [cursor=pointer]:
+          - /url: https://about.gitlab.com
+        - link "GitLab community forum" [ref=e54] [cursor=pointer]:
+          - /url: https://forum.gitlab.com
+      - combobox "English" [ref=e56] [cursor=pointer]
