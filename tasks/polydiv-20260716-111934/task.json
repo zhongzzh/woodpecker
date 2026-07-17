@@ -1,0 +1,14 @@
+{
+  "name": "新增 polydiv 函数",
+  "func": "polydiv",
+  "code_mr": "https://git.tongyuan.cc/syslab/packages/math/TyMathCore.jl/-/merge_requests/856",
+  "doc_mr": "https://git.tongyuan.cc/syslab/syslab-docs-2.0/-/merge_requests/3761",
+  "code_branch": "lius/polydiv_new",
+  "doc_branch": "lius/polydiv-new",
+  "doc_md": "syslabHelpSourceCode\\projects\\TyMath\\Doc\\TyMath\\ElementaryMath\\Polynomials\\polydiv.md",
+  "unit_test": "test\\ElementaryMath\\Polynomials\\polydiv.jl",
+  "benchmark": "benchmark\\ElementaryMath\\Polynomials\\polydiv",
+  "perf_note_heading": null,
+  "model": null,
+  "generated_at": "2026-07-16T11:19:38"
+}

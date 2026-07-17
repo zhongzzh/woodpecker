@@ -1,0 +1,14 @@
+{
+  "name": "新增convexHull函数",
+  "func": "convexHull",
+  "code_mr": "https://git.tongyuan.cc/syslab/packages/math/TyComputationalGeometry.jl/-/merge_requests/343",
+  "doc_mr": "https://git.tongyuan.cc/syslab/syslab-docs-2.0/-/merge_requests/3765",
+  "code_branch": "xlc/add-convexHull",
+  "doc_branch": "xlc/add-convexHull",
+  "doc_md": "syslabHelpSourceCode/projects/TyMath/Doc/TyMath/ComputationalGeometry/Delaunay/DelaunayTriangulation/convexHull.md",
+  "unit_test": "test/Delaunay/convexHull.jl",
+  "benchmark": "benchmark/ElementaryPolygons/Delaunay/DelaunayTriangulation/convexHull",
+  "perf_note_heading": "julia分支性能对比测试报告 2026-07-10 14:21:36",
+  "model": "claude-opus-4-8",
+  "generated_at": "2026-07-16T16:01:11"
+}

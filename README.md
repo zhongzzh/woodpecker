@@ -1,6 +1,6 @@
 # woodpecker（啄木鸟）—— 数学库函数提测测试自动化
 
-> 状态：**方案讨论阶段，尚未实现**。所有结论以 `docs/` 下文档为准。
+> 状态：**P1 管线 + P2 本地网页壳已实现**（新增函数 + 性能优化两种任务类型），方案结论以 `docs/` 下文档为准。
 > 项目名由来：啄木鸟逐棵树捉虫补漏，正是测试员给代码找 bug、补测试的比喻；与 parrot（文档测试）同属鸟类系列。
 
 ## 这个项目解决什么问题
@@ -29,13 +29,47 @@
 | [03-待讨论问题](docs/03-待讨论问题.md) | 开放问题清单，**讨论的主战场** |
 | [04-分析报告模板草案](docs/04-分析报告模板草案.md) | 最终交付的报告长什么样（草案，待确认） |
 | [05-性能报告样例分析](docs/05-性能报告样例分析.md) | MR !472 真实性能报告的结构解读；原文存档在 docs/samples/ |
+| [06-取数流程](docs/06-取数流程.md) | clone/checkout/定位单测与报告的完整流程（已实走验证），未来脚本的规格 |
+| [07-UI方案草案](docs/07-UI方案草案.md) | 面向小白的 UI 软件方案：三层架构、MVP 界面、技术选型、分期计划 |
+| [08-性能优化任务方案](docs/08-性能优化任务方案.md) | 第二种任务类型的输入、取数、分支/基准性能判定与实施记录 |
 
-## 目录规划（草案，随讨论调整）
+## 使用方法
+
+一次性准备（已完成则跳过）：
+
+1. `python -m venv .venv` 并 `.venv\Scripts\pip install anthropic playwright`，
+   再 `.venv\Scripts\playwright install chromium`；
+2. `python -m pipeline.login`：弹出浏览器人工登录一次 GitLab，登录态存 `.pw-state.json`。
+
+日常使用（二选一）：
+
+- **网页（推荐，小白友好）**：双击 `启动.bat`，浏览器自动打开
+  `http://127.0.0.1:8737`。可把邮件/聊天中的整段提测内容直接粘贴到“一键粘贴提测内容”，
+  工具会自动 URL 解码、拆分任务名与 MR、去除重复链接并回填表单。也可手动填写：
+  新增函数填「任务名 + 代码 MR + 文档 MR」；性能优化填
+  「任务名 + 代码 MR」，识别到“性能优化”后页面会自动隐藏文档 MR，
+  完成后页面直接看报告 / 下载 .md；历史任务下拉可回看。
+  本地服务使用隐藏模式运行，不会保留终端窗口；关闭最后一个 Woodpecker 页面后，
+  服务会自动退出（刷新页面不会误关）。
+  「⚙️ AI 设置」支持 **OpenAI 兼容协议**（`/v1/chat/completions`）与
+  **Anthropic 兼容协议**（`/v1/messages`），可自选 API 地址 + Key，
+  一键获取该端点的模型列表并选用（留空则使用对应环境变量与默认模型）。
+- **命令行**：
+  `.venv\Scripts\python -m pipeline.run --name "新增 xxx 函数" --code-mr <URL> --doc-mr <URL>`
+  或 `.venv\Scripts\python -m pipeline.run --name "xxx 函数性能优化" --code-mr <URL>`。
+  （MR 页面读不了时可加 `--code-branch/--doc-branch` 手动指定分支；`--no-ai` 跳过 AI。）
+
+每次运行产出 `tasks/<函数名>-<时间>/`：`分析报告.md`（覆盖分析 + 性能判定）、
+`materials/`（md/单测/性能报告快照）、`task.json`（输入与推导记录）。
+
+## 目录结构
 
 ```text
 woodpecker/
   README.md
-  docs/       # 方案文档（当前阶段的全部产出）
-  tasks/      # （未来）每期提测一个工作区，如 tasks/2026-06-w5/
-  scripts/    # （未来）确定性步骤的脚本：clone/checkout、定位文件等
+  启动.bat        # 双击启动本地网页
+  docs/           # 方案文档（讨论与决策记录）
+  pipeline/       # 管线代码：config/taskcard/repo/mr/locate/perf/analyze/run/web/login
+    static/       # 网页 UI（单页）
+  tasks/          # 每次分析一个产出目录（报告 + 材料快照）
 ```
