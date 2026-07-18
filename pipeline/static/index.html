@@ -41,6 +41,7 @@
     padding:8px 11px; background:var(--surface-2); border:1px solid var(--line); border-radius:999px;
     color:var(--muted); font-size:12px; }
   .ai-indicator .dot { width:7px; height:7px; flex:none; border-radius:50%; background:var(--brand); box-shadow:0 0 0 4px var(--brand-soft); }
+  .ai-indicator.offline .dot { background:var(--warn); box-shadow:0 0 0 4px var(--warn-soft); }
   #aiHeaderText { white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
   .shell { max-width:1440px; margin:0 auto; padding:34px 28px 54px; }
   .hero { display:flex; align-items:flex-end; justify-content:space-between; gap:30px; margin-bottom:24px; }
@@ -273,6 +274,8 @@
       <div class="brand-copy"><div class="brand-title">Woodpecker</div><div class="brand-sub">数学库提测分析工作台</div></div>
     </div>
     <div class="header-actions">
+      <div class="ai-indicator offline" id="gitlabIndicator" title="当前 GitLab 状态"><span class="dot"></span><span id="gitlabHeaderText">正在读取 GitLab 配置…</span></div>
+      <button class="btn btn-secondary" id="openGitlab" type="button" aria-label="打开 GitLab 设置">GitLab 设置</button>
       <div class="ai-indicator" title="当前 AI 配置"><span class="dot"></span><span id="aiHeaderText">正在读取 AI 配置…</span></div>
       <button class="btn btn-secondary" id="openAi" type="button" aria-label="打开 AI 设置">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M12 15.5a3.5 3.5 0 1 0 0-7 3.5 3.5 0 0 0 0 7Z"/><path d="M19.4 15a1.7 1.7 0 0 0 .34 1.88l.06.06-2.83 2.83-.06-.06a1.7 1.7 0 0 0-1.88-.34 1.7 1.7 0 0 0-1.03 1.55V21h-4v-.08A1.7 1.7 0 0 0 8.96 19.4a1.7 1.7 0 0 0-1.88.34l-.06.06-2.83-2.83.06-.06A1.7 1.7 0 0 0 4.6 15a1.7 1.7 0 0 0-1.55-1.03H3v-4h.08A1.7 1.7 0 0 0 4.6 8.94a1.7 1.7 0 0 0-.34-1.88L4.2 7l2.83-2.83.06.06a1.7 1.7 0 0 0 1.88.34A1.7 1.7 0 0 0 10 3.02V3h4v.08a1.7 1.7 0 0 0 1.03 1.55 1.7 1.7 0 0 0 1.88-.34l.06-.06L19.8 7l-.06.06a1.7 1.7 0 0 0-.34 1.88A1.7 1.7 0 0 0 20.95 10H21v4h-.08A1.7 1.7 0 0 0 19.4 15Z"/></svg>
@@ -333,6 +336,18 @@
   </div>
 </main>
 
+<dialog id="gitlabDialog" aria-labelledby="gitlabDialogTitle">
+  <div class="dialog-head"><div><h2 id="gitlabDialogTitle">GitLab 连接与登录</h2><p>不同电脑可分别配置 GitLab 地址和网络代理。账号密码只在 GitLab 登录页面中输入，不会保存在本工具配置里。</p></div><button class="icon-btn" id="closeGitlab" type="button" aria-label="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+  <div class="dialog-body">
+    <div class="effective-panel"><div class="effective-item"><div class="effective-label">登录状态</div><div class="effective-value" id="gitlabLoginState">读取中…</div></div><div class="effective-item"><div class="effective-label">当前地址</div><div class="effective-value" id="gitlabEffectiveHost">读取中…</div></div><div class="effective-item"><div class="effective-label">当前代理</div><div class="effective-value" id="gitlabEffectiveProxy">读取中…</div></div></div>
+    <div class="config-section"><div class="config-title"><h3>GitLab 地址</h3><span class="source-tag">当前电脑</span></div><p class="config-help">填写公司 GitLab 主机名，不需要填写登录页路径。</p><input type="text" id="gitlab_host" inputmode="url" autocomplete="off" placeholder="git.example.com"></div>
+    <div class="config-section"><div class="config-title"><h3>Git SSH 端口</h3></div><p class="config-help">用于克隆和更新代码仓库；请填写公司 GitLab 提供的 SSH 端口。</p><input type="number" id="gitlab_ssh_port" min="1" max="65535" placeholder="222"></div>
+    <div class="config-section"><div class="config-title"><h3>浏览器代理</h3><span class="source-tag">可选</span></div><p class="config-help">例如 <code>http://127.0.0.1:7890</code>。留空时使用 WOODPECKER_PROXY、Windows 系统代理或直连。</p><input type="text" id="gitlab_proxy" inputmode="url" autocomplete="off" placeholder="留空自动检测；或填写 http://127.0.0.1:7890"><div class="security-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg><span>配置保存在当前项目本机的 <code>.gitlab-config.json</code>；浏览器登录态单独保存在 <code>.pw-state.json</code>。</span></div></div>
+    <div class="config-section"><div class="config-title"><h3>连接检查</h3></div><p class="config-help">测试会使用与正式读取 MR 相同的 Chromium 和代理配置。</p><div class="inline-msg" id="gitlabMsg">请先测试连接；连接成功后再打开登录窗口。</div></div>
+  </div>
+  <div class="dialog-footer"><button class="btn btn-secondary" id="testGitlab" type="button">测试连接</button><div class="footer-actions"><button class="btn btn-ghost" id="saveGitlab" type="button">仅保存</button><button class="btn btn-primary" id="loginGitlab" type="button">打开登录窗口</button></div></div>
+</dialog>
+
 <dialog id="aiDialog" aria-labelledby="aiDialogTitle">
   <div class="dialog-head"><div><h2 id="aiDialogTitle">AI 模型配置</h2><p>支持 OpenAI 与 Anthropic 两种兼容协议。留空项会自动回退到对应的本机环境变量。</p></div><button class="icon-btn" id="closeAi" type="button" aria-label="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
   <div class="dialog-body">
@@ -352,7 +367,7 @@
 
 <script>
 const $ = id => document.getElementById(id);
-let currentMd = "", currentDir = "", polling = null, aiConfig = null, lifecycleConnection = null;
+let currentMd = "", currentDir = "", polling = null, aiConfig = null, gitlabConfig = null, lifecycleConnection = null;
 const iconCheck = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m3 8 3 3 7-7"/></svg>';
 
 function esc(s){ return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -385,6 +400,22 @@ function setButtonBusy(button,busy,label){
 async function api(url,options){
   const res=await fetch(url,options); let data; try{data=await res.json();}catch{throw new Error(`服务返回异常（HTTP ${res.status}）`);} return {res,data};
 }
+
+function gitlabPayload(){return {host:$("gitlab_host").value.trim(),ssh_port:$("gitlab_ssh_port").value.trim(),proxy:$("gitlab_proxy").value.trim()};}
+function setGitlabMsg(text,type=""){$("gitlabMsg").textContent=text;$("gitlabMsg").className="inline-msg "+type;}
+function updateGitlabSummary(c){
+  gitlabConfig=c;$("gitlab_host").value=c.host||"";$("gitlab_ssh_port").value=c.ssh_port||222;$("gitlab_proxy").value=c.proxy||"";
+  $("gitlabLoginState").textContent=c.logged_in?"已保存登录态":"尚未登录";$("gitlabEffectiveHost").textContent=c.host||"未配置";$("gitlabEffectiveProxy").textContent=c.effective_proxy||"未设置（直连）";
+  $("gitlabHeaderText").textContent=(c.logged_in?"GitLab 已登录":"GitLab 待登录")+` · ${c.host||"未配置"}`;$("gitlabIndicator").classList.toggle("offline",!c.logged_in);
+  setGitlabMsg(c.logged_in?"已有本机登录态。如网络或账号发生变化，可重新测试并登录。":"尚未登录。请测试连接，然后打开登录窗口。",c.logged_in?"success":"");
+}
+async function loadGitlabConfig(){try{const {data}=await api("/api/gitlab-config");updateGitlabSummary(data);}catch(e){$("gitlabHeaderText").textContent="GitLab 配置读取失败";toast(e.message,"error");}}
+$("openGitlab").onclick=async()=>{await loadGitlabConfig();$("gitlabDialog").showModal();};
+$("closeGitlab").onclick=()=>$("gitlabDialog").close();
+$("gitlabDialog").addEventListener("click",e=>{if(e.target===$("gitlabDialog"))$("gitlabDialog").close();});
+$("saveGitlab").onclick=async()=>{const btn=$("saveGitlab");setButtonBusy(btn,true,"保存中");try{const {data}=await api("/api/gitlab-config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(gitlabPayload())});if(!data.ok)throw new Error(data.message);await loadGitlabConfig();setGitlabMsg("配置已保存。建议继续测试连接。","success");toast("GitLab 配置已保存");}catch(e){setGitlabMsg(e.message,"error");toast(e.message,"error");}finally{setButtonBusy(btn,false);}};
+$("testGitlab").onclick=async()=>{const btn=$("testGitlab");setButtonBusy(btn,true,"正在连接");setGitlabMsg("正在启动 Chromium 并测试 GitLab 连接…");try{const {data}=await api("/api/gitlab-test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(gitlabPayload())});if(!data.ok)throw new Error(data.message);await loadGitlabConfig();setGitlabMsg(`${data.message}，实际页面：${data.url}`,"success");toast("GitLab 连接成功");}catch(e){setGitlabMsg(e.message,"error");toast(e.message,"error");}finally{setButtonBusy(btn,false);}};
+$("loginGitlab").onclick=async()=>{const btn=$("loginGitlab");setButtonBusy(btn,true,"等待登录");setGitlabMsg("登录窗口已启动。请在新窗口中完成 GitLab 登录，最多等待 5 分钟…");try{const {data}=await api("/api/gitlab-login",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(gitlabPayload())});if(!data.ok)throw new Error(data.message);await loadGitlabConfig();setGitlabMsg(data.message,"success");toast("GitLab 登录成功");}catch(e){setGitlabMsg(e.message,"error");toast(e.message,"error");}finally{setButtonBusy(btn,false);}};
 
 async function refreshTasks(selectDir){
   try{const {data:items}=await api("/api/tasks");const sel=$("history"),previous=selectDir||sel.value;sel.innerHTML='<option value="">选择历史报告…</option>'+items.map(t=>`<option value="${esc(t.dir)}">${esc(t.dir)}</option>`).join("");if(previous&&items.some(t=>t.dir===previous)){sel.value=previous;if(selectDir)loadReport(previous);}}
@@ -500,13 +531,13 @@ $("taskForm").onsubmit=async e=>{
   e.preventDefault();if(!validateForm())return;const perf=isPerformanceOptimization(),btn=$("go"),payload={name:$("name").value.trim(),code_mr:$("code_mr").value.trim(),doc_mr:perf?"":$("doc_mr").value.trim(),func:$("func").value.trim(),no_ai:$("no_ai").checked,code_branch:$("code_branch").value.trim(),doc_branch:perf?"":$("doc_branch").value.trim()};
   setButtonBusy(btn,true,"正在启动");updateSteps(1);setStatus("running","准备中","正在创建任务并启动分析流程…");updateLog([]);
   try{const {data}=await api("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});if(!data.ok)throw new Error(data.message);btn.innerHTML=btn.dataset.html;btn.classList.remove("loading");btn.disabled=true;if(!polling)polling=setInterval(poll,1000);poll();}
-  catch(e){setButtonBusy(btn,false);updateSteps(0);setStatus("error","启动失败",e.message);toast(e.message,"error");}
+  catch(e){setButtonBusy(btn,false);updateSteps(0);setStatus("error","启动失败",e.message);toast(e.message,"error");if(e.message.includes("尚未登录 GitLab")){await loadGitlabConfig();$("gitlabDialog").showModal();setGitlabMsg(e.message,"error");}}
 };
-document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"&&!$("aiDialog").open)$("taskForm").requestSubmit();});
+document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"&&!$("aiDialog").open&&!$("gitlabDialog").open)$("taskForm").requestSubmit();});
 
 // 持久连接用于感知页面生命周期：最后一个页面关闭后，隐藏的本地服务会自动退出。
 if("EventSource" in window) lifecycleConnection=new EventSource("/api/lifecycle");
-syncTaskTypeUi();refreshTasks();loadAiConfig();
+syncTaskTypeUi();refreshTasks();loadGitlabConfig();loadAiConfig();
 (async()=>{try{const {data:s}=await api("/api/status");updateLog(s.log||[]);if(s.running){$("go").disabled=true;if(!polling)polling=setInterval(poll,1000);poll();}else if(s.report_dir){updateSteps(5,true);setStatus("success","已完成","上一项分析已完成，可在历史报告中打开结果。");}else if(s.error){updateSteps(inferStep(s.log||[])||1);setStatus("error","上次失败",s.error);}}catch(e){setStatus("error","服务异常",e.message);}})();
 </script>
 </body>

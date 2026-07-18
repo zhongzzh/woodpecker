@@ -13,6 +13,9 @@ stdout 逐行收进日志，「中止」= 强杀子进程树（连带 playwright
   GET  /api/status           当前任务进度（前端 1s 轮询）
   GET  /api/tasks            历史任务列表（tasks/ 下有 分析报告.md 的目录）
   GET  /api/report?dir=xxx   某次任务的报告原文（md）
+  GET  /api/gitlab-config    GitLab 地址/代理/登录状态（POST 同路径保存）
+  POST /api/gitlab-test      使用 Chromium 测试 GitLab 连接
+  POST /api/gitlab-login     打开 GitLab 登录窗口并保存登录态
   GET  /api/ai-config        AI 设置（OpenAI/Anthropic 双协议；POST 同路径保存）
   POST /api/ai-models        按所选协议获取端点模型清单
 """
@@ -31,7 +34,7 @@ import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-from . import analyze, config, paste
+from . import analyze, config, login, paste
 from .taskcard import TaskCard
 
 HOST, PORT = "127.0.0.1", 8737
@@ -295,6 +298,14 @@ class Handler(BaseHTTPRequestHandler):
                 _ui_disconnected(self.server)
         elif u.path == "/api/tasks":
             self._json(_list_tasks())
+        elif u.path == "/api/gitlab-config":
+            cfg = config.load_gitlab_config()
+            cfg.update({
+                "logged_in": config.PW_STATE_FILE.exists(),
+                "effective_proxy": config.system_proxy() or "",
+                "saved": config.GITLAB_CONFIG_FILE.exists(),
+            })
+            self._json(cfg)
         elif u.path == "/api/ai-config":
             cfg = analyze.load_ai_config()
             # 页面只需要知道是否已保存，绝不把完整 Key 回传给浏览器。
@@ -358,6 +369,12 @@ class Handler(BaseHTTPRequestHandler):
             except paste.PasteParseError as e:
                 self._json({"ok": False, "message": str(e)}, 400)
         elif path == "/api/run":
+            if not config.PW_STATE_FILE.exists():
+                self._json({
+                    "ok": False,
+                    "message": "尚未登录 GitLab。请先打开右上角“GitLab 设置”，配置网络并完成登录。",
+                }, 400)
+                return
             for field in ("name", "code_mr"):
                 if not str(payload.get(field, "")).strip():
                     self._json({"ok": False, "message": f"输入有误: 缺少必填项 {field}"}, 400)
@@ -381,6 +398,44 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/stop":
             ok, message = _stop_job()
             self._json({"ok": ok, "message": message}, 200 if ok else 409)
+        elif path == "/api/gitlab-config":
+            try:
+                saved = config.save_gitlab_config(
+                    str(payload.get("host", "")),
+                    payload.get("ssh_port", ""),
+                    str(payload.get("proxy", "")),
+                )
+                self._json({"ok": True, "message": "GitLab 配置已保存", **saved})
+            except config.GitLabConfigError as e:
+                self._json({"ok": False, "message": str(e)}, 400)
+        elif path == "/api/gitlab-test":
+            try:
+                candidate = config.save_gitlab_config(
+                    str(payload.get("host", "")),
+                    payload.get("ssh_port", ""),
+                    str(payload.get("proxy", "")),
+                )
+                result = login.check_connection(
+                    candidate["host"], candidate["proxy"] or None
+                )
+                self._json({
+                    "ok": True,
+                    "message": f"连接成功（HTTP {result['status'] or '未知'}）",
+                    **result,
+                })
+            except (config.GitLabConfigError, login.LoginError) as e:
+                self._json({"ok": False, "message": str(e)}, 400)
+        elif path == "/api/gitlab-login":
+            try:
+                candidate = config.save_gitlab_config(
+                    str(payload.get("host", "")),
+                    payload.get("ssh_port", ""),
+                    str(payload.get("proxy", "")),
+                )
+                login.login_gitlab(candidate["host"], candidate["proxy"] or None)
+                self._json({"ok": True, "message": "GitLab 登录成功，登录态已保存"})
+            except (config.GitLabConfigError, login.LoginError) as e:
+                self._json({"ok": False, "message": str(e)}, 400)
         elif path == "/api/ai-models":
             try:
                 models = analyze.list_models(
