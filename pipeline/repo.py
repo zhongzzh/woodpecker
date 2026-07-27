@@ -31,7 +31,10 @@ def _git(repo: Path | None, *args: str, check: bool = True) -> subprocess.Comple
 
 
 def ssh_url(project_path: str) -> str:
-    return f"ssh://git@{config.GITLAB_HOST}:{config.GIT_SSH_PORT}/{project_path}.git"
+    return (
+        f"ssh://git@{config.gitlab_host()}:{config.gitlab_ssh_port()}/"
+        f"{project_path}.git"
+    )
 
 
 def ensure_repo(project_path: str, log=print) -> Path:
@@ -41,6 +44,7 @@ def ensure_repo(project_path: str, log=print) -> Path:
     if (local / ".git").exists():
         log(f"  仓库已存在: {local}")
         return local
+    config.CLONE_ROOT.mkdir(parents=True, exist_ok=True)
     log(f"  克隆 {project_path} -> {local} （首次，可能较慢）")
     _git(None, "clone", ssh_url(project_path), str(local))
     return local

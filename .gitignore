@@ -1,5 +1,7 @@
 .playwright-mcp/
+# Local-only environment, browser session, and credentials.
 .pw-state.json
+.gitlab-config.json
 .ai-config.json
 .venv/
 __pycache__/

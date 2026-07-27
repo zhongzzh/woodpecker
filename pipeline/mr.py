@@ -5,7 +5,7 @@
   2. 最新一条 mtest2 性能报告 note（D14：同 MR 取最新），含摘要文本 +
      「基准/分支版本详细数据」两张表（headers + rows，结构兼容 perf.judge_branch_table）。
 
-登录态存 .pw-state.json（gitignore），首次用 `python -m pipeline.login` 人工登录一次生成。
+登录态存 .pw-state.json（gitignore），在网页「GitLab 设置」中人工登录生成。
 本模块只读页面，不做任何页面操作（不点赞、不评论、不合并）。
 """
 
@@ -96,7 +96,7 @@ def read_mr(mr_url: str, log=print) -> dict:
     if not config.PW_STATE_FILE.exists():
         raise MrError(
             "还没有 GitLab 登录态（.pw-state.json 不存在）。"
-            "请先运行一次：python -m pipeline.login"
+            "请打开网页右上角的“GitLab 设置”，完成登录。"
         )
 
     with sync_playwright() as p:
@@ -112,7 +112,7 @@ def read_mr(mr_url: str, log=print) -> dict:
         if "/users/sign_in" in page.url:
             raise MrError(
                 "GitLab 登录态已失效（被跳转到登录页）。"
-                "请重新运行：python -m pipeline.login"
+                "请打开网页右上角的“GitLab 设置”重新登录。"
             )
         page.wait_for_selector(".detail-page-description", timeout=30_000)
 

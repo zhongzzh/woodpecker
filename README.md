@@ -35,11 +35,28 @@
 
 ## 使用方法
 
-一次性准备（已完成则跳过）：
+### 第一次使用（GitHub clone 后）
 
-1. `python -m venv .venv` 并 `.venv\Scripts\pip install anthropic playwright`，
-   再 `.venv\Scripts\playwright install chromium`；
-2. `python -m pipeline.login`：弹出浏览器人工登录一次 GitLab，登录态存 `.pw-state.json`。
+电脑只需预先安装：
+
+- **Python 3.10+**（安装时勾选 `Add Python to PATH`）；
+- **Git**，并已配置能访问公司 GitLab 的 SSH 账号/密钥。
+
+然后直接双击 `启动.bat`。首次启动会自动完成：
+
+1. 在项目内创建 `.venv`；
+2. 按 `requirements.txt` 安装 Python 依赖；
+3. 下载 Playwright Chromium；
+4. 启动网页 `http://127.0.0.1:8737`。
+
+网页启动后，首次使用请打开右上角的「GitLab 设置」：填写当前电脑使用的
+GitLab 地址、SSH 端口和可选代理，先「测试连接」，再「打开登录窗口」。
+网络、代理、DNS、证书或登录失败会直接显示在设置窗口中，不会阻塞 Web UI 启动。
+
+`.venv`、`.gitlab-config.json`、`.pw-state.json` 和 `.ai-config.json` 都是本机状态，已被 `.gitignore`
+排除，**不应上传 GitHub**。换电脑或重新 clone 时，启动器会重新创建环境并要求新电脑登录。
+依赖或 Chromium 损坏时也会自动修复。可用 `启动.bat --check` 只检查环境，
+日常建议在网页「GitLab 设置」中重新登录；仍可用 `启动.bat --login-only` 执行兼容的命令行登录。
 
 日常使用（二选一）：
 
@@ -67,6 +84,13 @@
   可加 `--perf-report-file <文本文件>` 分析另存的性能报告。
   （MR 页面读不了时可加 `--code-branch/--doc-branch` 手动指定分支；`--no-ai` 跳过 AI。）
 
+被测仓库默认缓存到当前用户的 `%LOCALAPPDATA%\woodpecker\repos`，不再绑定固定用户名。
+如需复用已有仓库目录，可设置环境变量 `WOODPECKER_CLONE_ROOT`。
+
+> 源码方式无法在“完全没有 Python/Git”的电脑上做到真正零环境。若以后面向更多非技术用户分发，
+> 建议再增加 GitHub Releases：用 PyInstaller 打包 Python 程序；Chromium可首次联网下载，
+> 或随安装包一起分发。源码 clone 场景则由当前自动自举方案负责。
+
 每次运行产出 `tasks/<函数名>-<时间>/`：`分析报告.md`（覆盖分析 + 性能判定）、
 `materials/`（md/单测/性能报告快照）、`task.json`（输入与推导记录）。
 
@@ -76,8 +100,9 @@
 woodpecker/
   README.md
   启动.bat        # 双击启动本地网页
+  requirements.txt # 可迁移的 Python 依赖声明
   docs/           # 方案文档（讨论与决策记录）
-  pipeline/       # 管线代码：config/taskcard/repo/mr/locate/perf/analyze/run/web/login
+  pipeline/       # 管线代码（含 bootstrap 自动环境准备）
     static/       # 网页 UI（单页）
   tasks/          # 每次分析一个产出目录（报告 + 材料快照）
 ```
