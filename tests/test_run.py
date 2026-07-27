@@ -67,5 +67,95 @@ class PerformanceOptimizationPipelineTests(unittest.TestCase):
             self.assertTrue((report_path.parent / "materials" / "partialcorri.md").exists())
 
 
+class LocalMaterialPipelineTests(unittest.TestCase):
+    def test_local_pipeline_skips_git_and_optional_performance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tasks_dir = root / "tasks"
+            unit_file = root / "sample.jl"
+            data_file = root / "sample_data_1.jl"
+            doc_file = root / "sample.md"
+            unit_file.write_text("include(\"sample_data_1.jl\")\n@test true", encoding="utf-8")
+            data_file.write_text("values = [1]", encoding="utf-8")
+            doc_file.write_text("# sample\n", encoding="utf-8")
+            card = TaskCard(
+                name="检查本地材料", input_mode="local",
+                local_code=str(unit_file), local_doc=str(doc_file),
+            )
+
+            with (
+                patch.object(config, "TASKS_DIR", tasks_dir),
+                patch("pipeline.run.repo.ensure_repo", side_effect=AssertionError("不应访问 Git")),
+                patch("pipeline.run.mr.read_mr", side_effect=AssertionError("不应访问 MR")),
+            ):
+                report_path = run(card, skip_ai=True, log=lambda _message: None)
+
+            report = report_path.read_text(encoding="utf-8")
+            task = json.loads((report_path.parent / "task.json").read_text(encoding="utf-8"))
+            materials = report_path.parent / "materials"
+            self.assertIn("任务类型：本地材料分析", report)
+            self.assertIn("本次不进行性能测试分析", report)
+            self.assertIn("功能验证未进行，本次未进行性能分析", report)
+            self.assertEqual(task["input_mode"], "local")
+            self.assertFalse(task["pasted_performance_report"])
+            self.assertTrue((materials / "sample.md").exists())
+            self.assertTrue((materials / "sample.jl").exists())
+            self.assertTrue((materials / "sample_data_1.jl").exists())
+
+    def test_local_pipeline_analyzes_and_snapshots_pasted_performance(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tasks_dir = root / "tasks"
+            unit_file = root / "sample.jl"
+            doc_file = root / "sample.md"
+            unit_file.write_text("@test true", encoding="utf-8")
+            doc_file.write_text("# sample", encoding="utf-8")
+            card = TaskCard(
+                name="检查本地材料", input_mode="local",
+                local_code=str(unit_file), local_doc=str(doc_file),
+            )
+
+            with (
+                patch.object(config, "TASKS_DIR", tasks_dir),
+                patch("pipeline.run.analyze.coverage_analysis", return_value="覆盖分析完成"),
+                patch(
+                    "pipeline.run.analyze.pasted_performance_analysis",
+                    return_value="### 用户粘贴的性能报告分析\n\n无法完整判定",
+                ) as perf_analysis,
+            ):
+                report_path = run(
+                    card, perf_report_text="基准 Julia: 1.0s", log=lambda _message: None
+                )
+
+            report = report_path.read_text(encoding="utf-8")
+            perf_analysis.assert_called_once()
+            self.assertIn("已分析用户粘贴的性能报告信息", report)
+            self.assertTrue(
+                (report_path.parent / "materials" / "性能报告-用户粘贴.txt").exists()
+            )
+
+    def test_no_ai_saves_pasted_performance_without_claiming_analysis(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            unit_file = root / "sample.jl"
+            doc_file = root / "sample.md"
+            unit_file.write_text("@test true", encoding="utf-8")
+            doc_file.write_text("# sample", encoding="utf-8")
+            card = TaskCard(
+                name="检查本地材料", input_mode="local",
+                local_code=str(unit_file), local_doc=str(doc_file),
+            )
+            with patch.object(config, "TASKS_DIR", root / "tasks"):
+                report_path = run(
+                    card, skip_ai=True, perf_report_text="性能报告原文",
+                    log=lambda _message: None,
+                )
+
+            report = report_path.read_text(encoding="utf-8")
+            self.assertIn("已保存用户粘贴的性能报告原文", report)
+            self.assertIn("本次未进行性能分析", report)
+            self.assertNotIn("已分析用户粘贴的性能报告信息", report)
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -1,0 +1,685 @@
+函数名	示例	julia 首次用时 s	julia 二次用时 s	MATLAB 2025b首次用时 s	MATLAB 2025b 二次用时 s	syslab/matlab首次比例	syslab/matlab二次比例
+cameraProjection	using TyComputerVision
+using BenchmarkTools
+
+intrinsics = cameraIntrinsics(
+    [4553.838718321816, 4616.09725337225],
+    [1416.373804473976, 1108.315227662441],
+    [1880, 2816];
+    RadialDistortion=[-0.05625435348688869, 0.457157973925695],
+    TangentialDistortion=[0.0, 0.0],
+    Skew=0.0,
+)
+
+R = [
+     0.14217392208160506   0.966120672904091    0.21540060646915588
+    -0.743876913094254    -0.03927778655620545  0.6671614449656161
+     0.6530189231908194   -0.2550844975112987   0.7130905868710588
+]
+
+translation = [-28.50226505283968 30.948377339794007 722.7782344693767]
+
+camExtrinsics = rigidtform3d(R, translation)
+
+first_run_time = @elapsed begin
+   P = cameraProjection(intrinsics, camExtrinsics)
+end
+
+second_run_time = @belapsed begin
+    P = cameraProjection(intrinsics, camExtrinsics)
+end
+##########   MATLAB  ############
+intrinsics = cameraIntrinsics( ...
+    [4553.838718321816, 4616.09725337225], ...
+    [1416.373804473976, 1108.315227662441], ...
+    [1880, 2816], ...
+    RadialDistortion=[-0.05625435348688869, 0.457157973925695], ...
+    TangentialDistortion=[0.0, 0.0], ...
+    Skew=0.0);
+
+R = [
+     0.14217392208160506   0.966120672904091    0.21540060646915588
+    -0.743876913094254    -0.03927778655620545  0.6671614449656161
+     0.6530189231908194   -0.2550844975112987   0.7130905868710588
+];
+
+translation = [-28.50226505283968 30.948377339794007 722.7782344693767];
+
+camExtrinsics = rigidtform3d(R, translation);
+
+tic;
+P = cameraProjection(intrinsics, camExtrinsics);
+first_run_time = toc;
+
+tic;
+P = cameraProjection(intrinsics, camExtrinsics);
+second_run_time = toc;	0.1690474	2.74E-06	0.049379	0.002012	3.423467465	0.001361829
+estimateExtrinsics	using TyComputerVision
+using TyImageProcessing
+using BenchmarkTools
+
+filenames = String[
+    abspath("resources/calibration/slr/image1.jpg"),
+    abspath("resources/calibration/slr/image2.jpg"),
+    abspath("resources/calibration/slr/image3.jpg"),
+    abspath("resources/calibration/slr/image4.jpg"),
+    abspath("resources/calibration/slr/image5.jpg"),
+    abspath("resources/calibration/slr/image6.jpg"),
+    abspath("resources/calibration/slr/image7.jpg"),
+    abspath("resources/calibration/slr/image8.jpg"),
+    abspath("resources/calibration/slr/image9.jpg"),
+]
+
+imagePoints, boardSize, = detectCheckerboardPoints(filenames)
+
+squareSize = 29
+worldPoints = patternWorldPoints("checkerboard", boardSize, squareSize)
+
+imgForSize = imread(filenames[1])
+imageSize = [size(imgForSize, 1), size(imgForSize, 2)]
+
+cameraParams, imagesUsed, estimationErrors = estimateCameraParameters(
+    imagePoints, worldPoints; ImageSize=imageSize
+)
+intrinsics = cameraParams.Intrinsics
+
+imOrig = imread(filenames[9])
+
+im, newIntrinsics = undistortImage(imOrig, intrinsics; OutputView="full")
+
+imagePoints2, boardSize2, = detectCheckerboardPoints(im)
+
+newOrigin = intrinsics.PrincipalPoint .- newIntrinsics.PrincipalPoint
+imagePoints2 = imagePoints2 .+ reshape(newOrigin, 1, 2)
+
+first_run_time = @elapsed begin
+   camExtrinsics = estimateExtrinsics(imagePoints2, worldPoints, newIntrinsics)
+end
+
+second_run_time = @belapsed begin
+    camExtrinsics = estimateExtrinsics(imagePoints2, worldPoints, newIntrinsics)
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+intrinsics = cameraIntrinsics( ...
+    [4553.838718321816, 4616.09725337225], ...
+    [1416.373804473976, 1108.315227662441], ...
+    [1880, 2816], ...
+    RadialDistortion=[-0.05625435348688869, 0.457157973925695], ...
+    TangentialDistortion=[0.0, 0.0], ...
+    Skew=0.0);
+
+R = [
+     0.14217392208160506   0.966120672904091    0.21540060646915588
+    -0.743876913094254    -0.03927778655620545  0.6671614449656161
+     0.6530189231908194   -0.2550844975112987   0.7130905868710588
+];
+
+translation = [-28.50226505283968 30.948377339794007 722.7782344693767];
+
+camExtrinsics = rigidtform3d(R, translation);
+
+tic;
+P = cameraProjection(intrinsics, camExtrinsics);
+first_run_time = toc;
+
+tic;
+P = cameraProjection(intrinsics, camExtrinsics);
+second_run_time = toc;	0.9871101	3.36E-05	0.029523	0.003218	33.435291	0.010441
+	using TyComputerVision
+
+fi = fisheyeIntrinsics([1.0, 0.0, 0.0, 0.0], [480, 640], [320.0, 240.0])
+worldPoints = [
+    0.0 0.0
+    0.5 0.0
+    1.0 0.0
+    0.0 0.5
+    0.5 0.5
+    1.0 0.5
+    0.0 1.0
+    0.5 1.0
+    1.0 1.0
+]
+R = [
+    0.968628335522866 -0.218985195236733 -0.117493114220925
+    0.205888308534897 0.971903540092345 -0.114076786265247
+    0.139173100960066 0.0863075490504599 0.986499799769905
+]
+t = [0.2, -0.1, 6.0]
+
+worldPoints3D = hcat(worldPoints, zeros(eltype(worldPoints), size(worldPoints, 1)))
+cameraPoints = worldPoints3D * R' .+ reshape(t, 1, 3)
+imagePoints = TyComputerVision._undistort_fisheye_points_project_points(
+    cameraPoints, fi.MappingCoeffsInternal, fi.StretchMatrix, fi.DistortionCenter
+)
+
+first_run_time = @elapsed begin
+    camExtrinsics = estimateExtrinsics(imagePoints, worldPoints, fi)
+end
+
+second_run_time = @elapsed begin
+    camExtrinsics = estimateExtrinsics(imagePoints, worldPoints, fi)
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+fi = fisheyeIntrinsics([1 0 0 0], [480 640], [320 240]);
+worldPoints = [
+    0 0
+    0.5 0
+    1.0 0
+    0 0.5
+    0.5 0.5
+    1.0 0.5
+    0 1.0
+    0.5 1.0
+    1.0 1.0
+];
+R = [
+    0.968628335522866 -0.218985195236733 -0.117493114220925
+    0.205888308534897 0.971903540092345 -0.114076786265247
+    0.139173100960066 0.0863075490504599 0.986499799769905
+];
+t = [0.2 -0.1 6.0];
+
+worldPoints3D = [worldPoints zeros(size(worldPoints, 1), 1)];
+cameraPoints = worldPoints3D * R' + t;
+imagePoints = [cameraPoints(:, 1) ./ cameraPoints(:, 3) + 320, ...
+    cameraPoints(:, 2) ./ cameraPoints(:, 3) + 240];
+
+tic;
+camExtrinsics = estimateExtrinsics(imagePoints, worldPoints, fi);
+first_run_time = toc;
+
+tic;
+camExtrinsics = estimateExtrinsics(imagePoints, worldPoints, fi);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)	3.1874129	0.0002898	0.119345	0.005795	26.707553	0.050009
+intrinsicsEstimationErrors	using TyComputerVision
+
+first_run_time = @elapsed begin
+   errors = intrinsicsEstimationErrors((
+    skew=0.004,
+    focalLength=[1.8, 1.6],
+    principalPoint=[0.9, 1.1],
+    radialDistortion=[0.002, 0.003, 0.0008],
+    tangentialDistortion=[0.0002, 0.0003],
+))
+end
+
+second_run_time = @elapsed begin
+   errors = intrinsicsEstimationErrors((
+    skew=0.004,
+    focalLength=[1.8, 1.6],
+    principalPoint=[0.9, 1.1],
+    radialDistortion=[0.002, 0.003, 0.0008],
+    tangentialDistortion=[0.0002, 0.0003],
+))
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+internalErrors = struct( ...
+    skew=0.004, ...
+    focalLength=[1.8 1.6], ...
+    principalPoint=[0.9 1.1], ...
+    radialDistortion=[0.002 0.003 0.0008], ...
+    tangentialDistortion=[0.0002 0.0003]);
+
+tic;
+errors = intrinsicsEstimationErrors(internalErrors);
+first_run_time = toc;
+
+tic;
+errors = intrinsicsEstimationErrors(internalErrors);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)	8.50E-06	3.50E-06	0.001974	0.000196	0.004306	0.017857
+extrinsicsEstimationErrors	using TyComputerVision
+
+first_run_time = @elapsed begin
+    errors = extrinsicsEstimationErrors(
+    [0.0054 0.0073 0.0024; 0.0050 0.0072 0.0027],
+    [6.0391 3.7318 3.9002; 6.9637 4.3578 4.6295],
+)
+end
+
+second_run_time = @elapsed begin
+    errors = extrinsicsEstimationErrors(
+    [0.0054 0.0073 0.0024; 0.0050 0.0072 0.0027],
+    [6.0391 3.7318 3.9002; 6.9637 4.3578 4.6295],
+)
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+internalErrors = struct( ...
+    rotationVectors=[0.0054 0.0073 0.0024; 0.0050 0.0072 0.0027], ...
+    translationVectors=[6.0391 3.7318 3.9002; 6.9637 4.3578 4.6295]);
+
+tic;
+errors = extrinsicsEstimationErrors(internalErrors);
+first_run_time = toc;
+
+tic;
+errors = extrinsicsEstimationErrors(internalErrors);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)	1.02E-05	2.70E-06	0.002306	0.000165	0.004423	0.016363
+stereoParameters	using TyComputerVision
+
+worldPoints = [0.0 0.0; 25.0 0.0; 25.0 25.0; 0.0 25.0]
+cameraParams1 = cameraParameters(;
+    K=[800.0 0.0 320.0; 0.0 810.0 240.0; 0.0 0.0 1.0],
+    ImageSize=[480, 640],
+    MeanReprojectionError=0.12,
+    NumViews=3,
+    WorldPoints=worldPoints,
+    WorldUnits="mm",
+)
+cameraParams2 = cameraParameters(;
+    K=[805.0 0.0 318.0; 0.0 815.0 242.0; 0.0 0.0 1.0],
+    ImageSize=[480, 640],
+    MeanReprojectionError=0.18,
+    NumViews=3,
+    WorldPoints=worldPoints,
+    WorldUnits="mm",
+)
+poseCamera2 = rigidtform3d([1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0], [120.0, 0.0, 0.0])
+
+first_run_time = @elapsed begin
+    stereoParams = stereoParameters(cameraParams1, cameraParams2, poseCamera2)
+end
+
+second_run_time = @elapsed begin
+    stereoParams = stereoParameters(cameraParams1, cameraParams2, poseCamera2)
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+
+worldPoints = [0.0 0.0; 25.0 0.0; 25.0 25.0; 0.0 25.0];
+rotationVectors = zeros(3, 3);
+translationVectors = [
+    0.0 0.0 1000.0;
+    5.0 0.0 1000.0;
+    0.0 5.0 1000.0
+];
+detectedKeypoints = true(4, 3);
+reprojectionErrors1 = repmat(reshape([0.12, 0.0], 1, 2, 1), 4, 1, 3);
+reprojectionErrors2 = repmat(reshape([0.18, 0.0], 1, 2, 1), 4, 1, 3);
+
+cameraParams1 = cameraParameters( ...
+    K=[800.0 0.0 320.0; 0.0 810.0 240.0; 0.0 0.0 1.0], ...
+    ImageSize=[480, 640], ...
+    RotationVectors=rotationVectors, ...
+    TranslationVectors=translationVectors, ...
+    WorldPoints=worldPoints, ...
+    WorldUnits="mm", ...
+    ReprojectionErrors=reprojectionErrors1, ...
+    DetectedKeypoints=detectedKeypoints);
+cameraParams2 = cameraParameters( ...
+    K=[805.0 0.0 318.0; 0.0 815.0 242.0; 0.0 0.0 1.0], ...
+    ImageSize=[480, 640], ...
+    RotationVectors=rotationVectors, ...
+    TranslationVectors=translationVectors, ...
+    WorldPoints=worldPoints, ...
+    WorldUnits="mm", ...
+    ReprojectionErrors=reprojectionErrors2, ...
+    DetectedKeypoints=detectedKeypoints);
+poseCamera2 = rigidtform3d(eye(3), [120.0, 0.0, 0.0]);
+
+tic;
+stereoParams = stereoParameters(cameraParams1, cameraParams2, poseCamera2);
+first_run_time = toc;
+
+tic;
+stereoParams = stereoParameters(cameraParams1, cameraParams2, poseCamera2);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)	0.1219828	3.58E-05	0.128038	0.008908	0.9527078	0.004019
+toStruct	using TyComputerVision
+
+intrinsics1 = cameraIntrinsics([800.0, 810.0], [320.0, 240.0], [480, 640])
+intrinsics2 = cameraIntrinsics([805.0, 815.0], [318.0, 242.0], [480, 640])
+poseCamera2 = rigidtform3d([1.0 0.0 0.0; 0.0 1.0 0.0; 0.0 0.0 1.0], [120.0, 0.0, 0.0])
+
+stereoParams = stereoParameters(intrinsics1, intrinsics2, poseCamera2)
+
+first_run_time = @elapsed begin
+    paramStruct = toStruct(stereoParams)
+end
+
+second_run_time = @elapsed begin
+    paramStruct = toStruct(stereoParams)
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+
+##########   MATLAB  ############
+intrinsics1 = cameraIntrinsics([800.0, 810.0], [320.0, 240.0], [480, 640]);
+intrinsics2 = cameraIntrinsics([805.0, 815.0], [318.0, 242.0], [480, 640]);
+poseCamera2 = rigidtform3d(eye(3), [120.0, 0.0, 0.0]);
+
+stereoParams = stereoParameters(intrinsics1, intrinsics2, poseCamera2);
+disp(stereoParams)
+
+tic;
+paramStruct = toStruct(stereoParams);
+first_run_time = toc;
+
+tic;
+paramStruct = toStruct(stereoParams);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)	0.0084413	1.35E-05	0.00193	0.00096	4.37373	0.014062
+cameraCalibrationErrors	using TyComputerVision
+using BenchmarkTools
+
+internalErrors = (
+    skew=0.0,
+    focalLength=[3.3219, 4.0579],
+    principalPoint=[5.3967, 3.3036],
+    radialDistortion=[0.0091, 0.0488],
+    tangentialDistortion=[0.0, 0.0],
+    rotationVectors=[0.0054 0.0073 0.0024; 0.0050 0.0072 0.0027],
+    translationVectors=[6.0391 3.7318 3.9002; 6.9637 4.3578 4.6295],
+)
+
+first_run_time = @elapsed begin
+    errors = cameraCalibrationErrors(internalErrors)
+end
+
+second_run_time = @elapsed begin
+    errors = cameraCalibrationErrors(internalErrors)
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+
+##########   MATLAB  ############
+internalErrors = struct( ...
+    skew=0.0, ...
+    focalLength=[3.3219 4.0579], ...
+    principalPoint=[5.3967 3.3036], ...
+    radialDistortion=[0.0091 0.0488], ...
+    tangentialDistortion=[0.0 0.0], ...
+    rotationVectors=[0.0054 0.0073 0.0024; 0.0050 0.0072 0.0027], ...
+    translationVectors=[6.0391 3.7318 3.9002; 6.9637 4.3578 4.6295]);
+
+tic;
+errors = cameraCalibrationErrors(internalErrors);
+first_run_time = toc;
+
+tic;
+errors = cameraCalibrationErrors(internalErrors);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)
+	0.2295415	7.30E-06	0.071242	0.000343	3.221997	0.021283
+fisheyeIntrinsicsEstimationErrors	using TyComputerVision
+
+rawErrors = (
+    mappingCoefficients=[1.0, 1.1, 1.2, 1.3],
+    distortionCenter=[0.4, 0.5],
+    stretchMatrix=[0.01 0.03; 0.02 1.0],
+)
+
+first_run_time = @elapsed begin
+   intrinsicsErrors = fisheyeIntrinsicsEstimationErrors(rawErrors)
+end
+
+second_run_time = @elapsed begin
+    eintrinsicsErrors = fisheyeIntrinsicsEstimationErrors(rawErrors)
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+
+##########   MATLAB  ############
+rawErrors = struct( ...
+    'mappingCoefficients', [1.0, 1.1, 1.2, 1.3], ...
+    'distortionCenter', [0.4, 0.5], ...
+    'stretchMatrix', [0.01 0.03; 0.02 1.0] ...
+);
+
+tic;
+intrinsicsErrors = fisheyeIntrinsicsEstimationErrors(rawErrors);
+first_run_time = toc;
+
+tic;
+intrinsicsErrors = fisheyeIntrinsicsEstimationErrors(rawErrors);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)
+	0.1349306	9.70E-06	0.003474	0.000324	38.840127	0.029938
+fisheyeCalibrationErrors	using TyComputerVision
+
+intrinsics = fisheyeIntrinsics(
+    [320.0, 0.01, -0.001, 0.0001],
+    [480, 640],
+    [320.0, 240.0];
+    StretchMatrix=[1.0 0.02; -0.01 1.0],
+)
+fisheyeParams = fisheyeParameters(
+    intrinsics;
+    RotationVectors=[-0.1 0.2 0.3; 0.0 0.3 0.4],
+    TranslationVectors=[10.0 20.0 30.0; 20.0 40.0 60.0],
+    WorldUnits="cm",
+)
+
+intrinsicsErrors = fisheyeIntrinsicsEstimationErrors(
+    [1.0, 1.1, 1.2, 1.3], [0.4, 0.5], [0.01, 0.02, 0.03]
+)
+extrinsicsErrors = extrinsicsEstimationErrors(
+    [0.004 0.005 0.003; 0.006 0.004 0.005], [1.2 1.0 2.4; 1.5 1.3 2.8]
+)
+
+first_run_time = @elapsed begin
+   errors = fisheyeCalibrationErrors(intrinsicsErrors, extrinsicsErrors)
+end
+
+second_run_time = @elapsed begin
+    errors = fisheyeCalibrationErrors(intrinsicsErrors, extrinsicsErrors)
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+
+##########   MATLAB  ############
+intrinsics = fisheyeIntrinsics( ...
+    [320.0, 0.01, -0.001, 0.0001], ...
+    [480, 640], ...
+    [320.0, 240.0], ...
+    [1.0 0.02; -0.01 1.0] ...
+);
+
+fisheyeParams = fisheyeParameters( ...
+    intrinsics, ...
+    'RotationVectors', [-0.1 0.2 0.3; 0.0 0.3 0.4], ...
+    'TranslationVectors', [10.0 20.0 30.0; 20.0 40.0 60.0], ...
+    'WorldUnits', 'cm' ...
+);
+
+rawErrors = struct( ...
+    'mappingCoefficients', [1.0, 1.1, 1.2, 1.3], ...
+    'distortionCenter', [0.4, 0.5], ...
+    'stretchMatrix', [0.01 0.03; 0.02 1.0], ...
+    'rotationVectors', [0.004 0.005 0.003; 0.006 0.004 0.005], ...
+    'translationVectors', [1.2 1.0 2.4; 1.5 1.3 2.8] ...
+);
+
+tic;
+errors = fisheyeCalibrationErrors(rawErrors);
+first_run_time = toc;
+
+tic;
+errors = fisheyeCalibrationErrors(rawErrors);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)
+	0.0036625	2.20E-06	0.026416	0.000418	0.138647	0.005263
+displayErrors	using TyComputerVision
+
+intrinsics = fisheyeIntrinsics(
+    [320.0, 0.01, -0.001, 0.0001],
+    [480, 640],
+    [320.0, 240.0];
+    StretchMatrix=[1.0 0.02; -0.01 1.0],
+)
+rotationVectors = [-0.15 0.08 0.02; -0.22 -0.04 0.10]
+translationVectors = [12.0 -8.0 450.0; -18.0 14.0 510.0]
+fisheyeParams = fisheyeParameters(
+    intrinsics;
+    RotationVectors=rotationVectors,
+    TranslationVectors=translationVectors,
+    WorldUnits="mm",
+)
+
+errors = fisheyeCalibrationErrors((
+    mappingCoefficients=[1.0, 1.1, 1.2, 1.3],
+    distortionCenter=[0.4, 0.5],
+    stretchMatrix=[0.01 0.03; 0.02 1.0],
+    rotationVectors=[0.004 0.005 0.003; 0.006 0.004 0.005],
+    translationVectors=[1.2 1.0 2.4; 1.5 1.3 2.8],
+))
+
+first_run_time = @elapsed begin
+   displayErrors(errors, fisheyeParams)
+end
+
+second_run_time = @elapsed begin
+   displayErrors(errors, fisheyeParams)
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+
+##########   MATLAB  ############
+intrinsics = fisheyeIntrinsics( ...
+    [320.0, 0.01, -0.001, 0.0001], ...
+    [480, 640], ...
+    [320.0, 240.0], ...
+    [1.0 0.02; -0.01 1.0] ...
+);
+
+rotationVectors = [-0.15 0.08 0.02; -0.22 -0.04 0.10];
+translationVectors = [12.0 -8.0 450.0; -18.0 14.0 510.0];
+
+fisheyeParams = fisheyeParameters( ...
+    intrinsics, ...
+    'RotationVectors', rotationVectors, ...
+    'TranslationVectors', translationVectors, ...
+    'WorldUnits', 'mm' ...
+);
+
+rawErrors = struct( ...
+    'mappingCoefficients', [1.0, 1.1, 1.2, 1.3], ...
+    'distortionCenter', [0.4, 0.5], ...
+    'stretchMatrix', [0.01 0.03; 0.02 1.0], ...
+    'rotationVectors', [0.004 0.005 0.003; 0.006 0.004 0.005], ...
+    'translationVectors', [1.2 1.0 2.4; 1.5 1.3 2.8] ...
+);
+
+errors = fisheyeCalibrationErrors(rawErrors);
+
+tic;
+displayErrors(errors, fisheyeParams);
+first_run_time = toc;
+
+tic;
+displayErrors(errors, fisheyeParams);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)
+	0.8963581	0.0017871	0.024863	0.006118	36.051888	0.289175
+stereoCalibrationErrors	using TyComputerVision
+
+camera1Errors = (
+    skew=0.0,
+    focalLength=[0.6533, 0.6389],
+    principalPoint=[0.3408, 0.2639],
+    radialDistortion=[0.0008, 0.0026],
+    tangentialDistortion=[0.0, 0.0],
+    rotationVectors=[0.0007 0.0006 0.0001; 0.0006 0.0005 0.0],
+    translationVectors=[0.4914 0.4002 1.0127; 0.5228 0.4094 0.9987],
+)
+camera2Errors = (
+    skew=0.0,
+    focalLength=[0.6644, 0.6534],
+    principalPoint=[0.3305, 0.2633],
+    radialDistortion=[0.0007, 0.0022],
+    tangentialDistortion=[0.0, 0.0],
+)
+rawErrors = (
+    camera1=camera1Errors,
+    camera2=camera2Errors,
+    r=[0.0002, 0.0004, 0.0],
+    t=[0.0401, 0.0414, 0.1750],
+)
+
+first_run_time = @elapsed begin
+   errors = stereoCalibrationErrors(rawErrors)
+end
+
+second_run_time = @elapsed begin
+   errors = stereoCalibrationErrors(rawErrors)
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+
+##########   MATLAB  ############
+camera1Errors = struct( ...
+    'skew', 0.0, ...
+    'focalLength', [0.6533, 0.6389], ...
+    'principalPoint', [0.3408, 0.2639], ...
+    'radialDistortion', [0.0008, 0.0026], ...
+    'tangentialDistortion', [0.0, 0.0], ...
+    'rotationVectors', [0.0007 0.0006 0.0001; 0.0006 0.0005 0.0], ...
+    'translationVectors', [0.4914 0.4002 1.0127; 0.5228 0.4094 0.9987] ...
+);
+
+camera2Errors = struct( ...
+    'skew', 0.0, ...
+    'focalLength', [0.6644, 0.6534], ...
+    'principalPoint', [0.3305, 0.2633], ...
+    'radialDistortion', [0.0007, 0.0022], ...
+    'tangentialDistortion', [0.0, 0.0] ...
+);
+
+rawErrors = struct( ...
+    'camera1', camera1Errors, ...
+    'camera2', camera2Errors, ...
+    'r', [0.0002, 0.0004, 0.0], ...
+    't', [0.0401, 0.0414, 0.1750] ...
+);
+
+tic;
+errors = stereoCalibrationErrors(rawErrors);
+first_run_time = toc;
+
+tic;
+errors = stereoCalibrationErrors(rawErrors);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)
+	0.3341674	8.70E-06	0.08136	0.000516	4.107268	0.01686

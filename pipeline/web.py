@@ -7,7 +7,8 @@ stdout 逐行收进日志，「中止」= 强杀子进程树（连带 playwright
 
 接口：
   GET  /                     单页 UI
-  POST /api/run              {name, code_mr, doc_mr?, func?, doc_branch?, code_branch?, no_ai?}
+  POST /api/run              在线 MR 或本地材料任务
+  POST /api/select-local     打开本机文件选择器（代码/单测或文档）
   POST /api/parse-input      {text} → 从整段粘贴内容提取任务名与 MR
   POST /api/stop             中止当前任务（杀子进程树）
   GET  /api/status           当前任务进度（前端 1s 轮询）
@@ -15,6 +16,7 @@ stdout 逐行收进日志，「中止」= 强杀子进程树（连带 playwright
   GET  /api/report?dir=xxx   某次任务的报告原文（md）
   GET  /api/ai-config        AI 设置（OpenAI/Anthropic 双协议；POST 同路径保存）
   POST /api/ai-models        按所选协议获取端点模型清单
+  POST /api/ai-test          使用设置面板当前值发送一次自定义问题
 """
 
 from __future__ import annotations
@@ -25,13 +27,15 @@ import os
 import shutil
 import subprocess
 import sys
+import tempfile
 import threading
 import time
 import webbrowser
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import analyze, config, paste
+from . import analyze, config, locate, paste
 from .taskcard import TaskCard
 
 HOST, PORT = "127.0.0.1", 8737
@@ -114,10 +118,16 @@ def _build_argv(payload: dict) -> list[str]:
     argv = [
         python_exe, "-m", "pipeline.run",
         "--name", payload["name"].strip(),
-        "--code-mr", payload["code_mr"].strip(),
     ]
-    if payload.get("doc_mr", "").strip():
-        argv += ["--doc-mr", payload["doc_mr"].strip()]
+    if payload.get("input_mode") == "local":
+        argv += [
+            "--local-code", payload["local_code"].strip(),
+            "--local-doc", payload["local_doc"].strip(),
+        ]
+    else:
+        argv += ["--code-mr", payload["code_mr"].strip()]
+        if payload.get("doc_mr", "").strip():
+            argv += ["--doc-mr", payload["doc_mr"].strip()]
     if payload.get("func", "").strip():
         argv += ["--func", payload["func"].strip()]
     if payload.get("code_branch", "").strip():
@@ -126,7 +136,42 @@ def _build_argv(payload: dict) -> list[str]:
         argv += ["--doc-branch", payload["doc_branch"].strip()]
     if payload.get("no_ai"):
         argv += ["--no-ai"]
+    if payload.get("perf_report_file", "").strip():
+        argv += ["--perf-report-file", payload["perf_report_file"].strip()]
     return argv
+
+
+def _select_local_file(kind: str) -> str:
+    """用系统文件对话框选择材料；浏览器本身不会暴露本地文件的真实路径。"""
+    choices = {
+        "code": ("选择 Julia 代码或单测", [("Julia 文件", "*.jl"), ("所有文件", "*.*")]),
+        "doc": ("选择函数文档", [("Markdown 文件", "*.md"), ("所有文件", "*.*")]),
+    }
+    if kind not in choices:
+        raise ValueError(f"不支持的文件类型：{kind!r}")
+    try:
+        import tkinter as tk
+        from tkinter import filedialog
+    except ImportError as exc:
+        raise RuntimeError("当前 Python 环境缺少 tkinter，无法打开系统文件选择器") from exc
+
+    try:
+        root = tk.Tk()
+    except tk.TclError as exc:
+        raise RuntimeError(f"无法打开系统文件选择器：{exc}") from exc
+    root.withdraw()
+    try:
+        root.attributes("-topmost", True)
+        root.update()
+        title, filetypes = choices[kind]
+        try:
+            return str(filedialog.askopenfilename(
+                parent=root, title=title, filetypes=filetypes
+            ))
+        except tk.TclError as exc:
+            raise RuntimeError(f"系统文件选择器执行失败：{exc}") from exc
+    finally:
+        root.destroy()
 
 
 def _cleanup_partial_output(out_dir: str | None) -> None:
@@ -150,15 +195,28 @@ def _start_job(payload: dict) -> tuple[bool, str]:
         _job.out_dir = None
 
     env = {**os.environ, "PYTHONUTF8": "1"}  # 子进程 stdout/stderr 统一 utf-8
+    launch_payload = dict(payload)
+    temp_perf_path: Path | None = None
     try:
+        perf_report_text = str(payload.get("perf_report_text", "")).strip()
+        if perf_report_text:
+            with tempfile.NamedTemporaryFile(
+                mode="w", encoding="utf-8", prefix="woodpecker-perf-",
+                suffix=".txt", delete=False,
+            ) as temp_perf:
+                temp_perf.write(perf_report_text)
+                temp_perf_path = Path(temp_perf.name)
+            launch_payload["perf_report_file"] = str(temp_perf_path)
         proc = subprocess.Popen(
-            _build_argv(payload),
+            _build_argv(launch_payload),
             cwd=str(config.PROJECT_ROOT),
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
             text=True, encoding="utf-8", errors="replace",
             env=env,
         )
     except OSError as e:
+        if temp_perf_path:
+            temp_perf_path.unlink(missing_ok=True)
         with _job.lock:
             _job.running = False
             _job.error = f"启动分析子进程失败: {e}"
@@ -195,6 +253,8 @@ def _start_job(payload: dict) -> tuple[bool, str]:
         with _job.lock:
             _job.running = False
             _job.proc = None
+        if temp_perf_path:
+            temp_perf_path.unlink(missing_ok=True)
 
     threading.Thread(target=reader, daemon=True).start()
     return True, "started"
@@ -299,6 +359,7 @@ class Handler(BaseHTTPRequestHandler):
             cfg = analyze.load_ai_config()
             # 页面只需要知道是否已保存，绝不把完整 Key 回传给浏览器。
             cfg["has_saved_key"] = bool(cfg["api_key"])
+            cfg["api_key_masked"] = analyze.mask_api_key(cfg["api_key"])
             cfg["api_key"] = ""
             # 环境变量兜底情况给前端做占位提示（不回传环境变量里的 Key 本身）。
             default_protocol = os.environ.get("WOODPECKER_AI_PROTOCOL", "anthropic").lower()
@@ -357,8 +418,16 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, **result})
             except paste.PasteParseError as e:
                 self._json({"ok": False, "message": str(e)}, 400)
+        elif path == "/api/select-local":
+            try:
+                selected = _select_local_file(str(payload.get("kind", "")))
+                self._json({"ok": True, "path": selected, "cancelled": not bool(selected)})
+            except (RuntimeError, ValueError) as e:
+                self._json({"ok": False, "message": str(e)}, 400)
         elif path == "/api/run":
-            for field in ("name", "code_mr"):
+            input_mode = str(payload.get("input_mode", "remote")).strip().lower() or "remote"
+            required = ("name", "local_code", "local_doc") if input_mode == "local" else ("name", "code_mr")
+            for field in required:
                 if not str(payload.get(field, "")).strip():
                     self._json({"ok": False, "message": f"输入有误: 缺少必填项 {field}"}, 400)
                     return
@@ -368,12 +437,23 @@ class Handler(BaseHTTPRequestHandler):
                     code_mr=str(payload.get("code_mr", "")).strip(),
                     doc_mr=str(payload.get("doc_mr", "")).strip(),
                     func=str(payload.get("func", "")).strip(),
+                    input_mode=input_mode,
+                    local_code=str(payload.get("local_code", "")).strip(),
+                    local_doc=str(payload.get("local_doc", "")).strip(),
                 )
-                # 提前验证 URL 结构，避免启动子进程后才失败。
-                _ = card.code_project
-                if card.is_new_function:
-                    _ = card.doc_project
-            except ValueError as e:
+                if card.is_local:
+                    locate.local_file(card.local_doc, "本地文档")
+                    locate.find_local_unit_test(
+                        card.local_code, card.func, log=lambda _message: None
+                    )
+                else:
+                    # 提前验证 URL 结构，避免启动子进程后才失败。
+                    _ = card.code_project
+                    if card.is_new_function:
+                        _ = card.doc_project
+                    payload["perf_report_text"] = ""
+                payload["input_mode"] = input_mode
+            except (locate.LocateError, ValueError) as e:
                 self._json({"ok": False, "message": f"输入有误: {e}"}, 400)
                 return
             ok, message = _start_job(payload)
@@ -391,11 +471,27 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "models": models})
             except analyze.AnalyzeError as e:
                 self._json({"ok": False, "message": str(e)}, 400)
+        elif path == "/api/ai-test":
+            try:
+                answer = analyze.test_ai_prompt(
+                    str(payload.get("question", "")),
+                    str(payload.get("base_url", "")),
+                    str(payload.get("api_key", "")),
+                    str(payload.get("model", "")),
+                    str(payload.get("protocol", "")),
+                )
+                self._json({"ok": True, "answer": answer})
+            except analyze.AnalyzeError as e:
+                self._json({"ok": False, "message": str(e)}, 400)
         elif path == "/api/ai-config":
             try:
                 api_key = str(payload.get("api_key", ""))
-                if not api_key.strip() and payload.get("keep_api_key"):
-                    api_key = analyze.load_ai_config()["api_key"]
+                saved_key = analyze.load_ai_config()["api_key"]
+                if (
+                    api_key.strip() == analyze.mask_api_key(saved_key)
+                    or (not api_key.strip() and payload.get("keep_api_key"))
+                ):
+                    api_key = saved_key
                 analyze.save_ai_config(
                     str(payload.get("base_url", "")),
                     api_key,

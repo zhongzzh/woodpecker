@@ -11,6 +11,52 @@ class LocateError(RuntimeError):
     pass
 
 
+def local_path(path_text: str, label: str, allow_directory: bool = False) -> Path:
+    """校验并解析用户指定的本地路径。"""
+    path = Path(path_text).expanduser().resolve()
+    if not path.exists():
+        raise LocateError(f"{label}不存在：{path}")
+    if path.is_dir() and allow_directory:
+        return path
+    if not path.is_file():
+        raise LocateError(f"{label}不是文件：{path}")
+    return path
+
+
+def local_file(path_text: str, label: str) -> Path:
+    """校验并解析用户指定的本地文件路径。"""
+    return local_path(path_text, label)
+
+
+def find_local_unit_test(path_text: str, func: str, log=print) -> dict:
+    """从用户指定的文件或目录中读取本地代码/单测。
+
+    文件模式直接使用该文件，并自动收集同目录的 ``<func>_*.jl``；目录模式
+    优先在 ``test/`` 下按 ``<func>.jl`` 定位，没有 test/ 时在整个目录查找。
+    """
+    source = local_path(path_text, "本地代码/单测路径", allow_directory=True)
+
+    if source.is_file():
+        main = source
+        root = source.parent
+    elif source.is_dir():
+        root = source
+        search_root = source / "test" if (source / "test").is_dir() else source
+        mains = sorted(search_root.rglob(f"{func}.jl"))
+        if not mains:
+            raise LocateError(f"{search_root} 下未找到 {func}.jl")
+        if len(mains) > 1:
+            raise LocateError(f"本地路径下有多个 {func}.jl，无法确定：{mains}")
+        main = mains[0]
+    else:
+        raise LocateError(f"本地代码/单测路径既不是文件也不是目录：{source}")
+
+    companions = sorted(p for p in main.parent.glob(f"{func}_*.jl") if p != main)
+    log(f"  本地代码/单测: {main}"
+        + (f"（伴随数据 {len(companions)} 个）" if companions else ""))
+    return {"main": main, "companions": companions, "root": root}
+
+
 def find_doc_md(docs_repo: Path, func: str, base: str, log=print) -> Path:
     """定位函数文档 md。
 

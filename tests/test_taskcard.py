@@ -1,4 +1,5 @@
 import unittest
+from pathlib import Path
 
 from pipeline.taskcard import TaskCard
 
@@ -25,6 +26,26 @@ class TaskCardTests(unittest.TestCase):
             TaskCard(
                 name="ode89 调整",
                 code_mr="https://git.tongyuan.cc/syslab/packages/math/TyDifferentialEquation.jl/-/merge_requests/1",
+            )
+
+    def test_local_mode_accepts_plain_name_and_infers_function_from_doc(self):
+        card = TaskCard(
+            name="检查本地材料",
+            input_mode="local",
+            local_code=r"C:\materials\sample.jl",
+            local_doc=r"C:\materials\sample.md",
+        )
+        self.assertEqual(card.task_type, "local_analysis")
+        self.assertEqual(card.func, "sample")
+        self.assertTrue(card.is_local)
+        with self.assertRaisesRegex(ValueError, "没有代码 MR 项目"):
+            _ = card.code_project
+
+    def test_local_mode_requires_both_material_paths(self):
+        with self.assertRaisesRegex(ValueError, "必须提供文档文件"):
+            TaskCard(
+                name="检查本地材料", func="sample", input_mode="local",
+                local_code=str(Path("sample.jl")),
             )
 
 

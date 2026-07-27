@@ -1,0 +1,19 @@
+{
+  "name": "activecontour函数",
+  "func": "adapthisteq",
+  "task_type": "local_analysis",
+  "input_mode": "local",
+  "code_mr": null,
+  "doc_mr": null,
+  "local_code": "C:/Users/TR/Desktop/doc/TyImageProcessing.jl/test/im_enhance/test_adapthisteq.jl",
+  "local_doc": "C:/Users/TR/Desktop/doc/syslab-docs-2.0/syslabHelpSourceCode/projects/TyImageProcessing/Doc/TyImageProcessing/ImageFilteringandEnhancement/ContrastAdjustment/adapthisteq.md",
+  "code_branch": "本地文件",
+  "doc_branch": "本地文件",
+  "doc_md": "adapthisteq.md",
+  "unit_test": "test_adapthisteq.jl",
+  "benchmark": null,
+  "perf_note_heading": null,
+  "pasted_performance_report": true,
+  "model": "deepseek-v4-pro-nothinking",
+  "generated_at": "2026-07-27T14:23:17"
+}

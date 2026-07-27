@@ -71,35 +71,59 @@ def normalize_base(url: str) -> str:
     return url
 
 
-def _effective() -> dict:
-    """合并用户配置与环境变量，得到实际生效的协议/端点/Key/模型。"""
-    cfg = load_ai_config()
-    protocol = (cfg["protocol"] or os.environ.get("WOODPECKER_AI_PROTOCOL", "anthropic")).lower()
-    if protocol not in ("openai", "anthropic"):
-        raise AnalyzeError(
-            f"WOODPECKER_AI_PROTOCOL 取值非法: {protocol!r}（应为 openai/anthropic）"
-        )
+def mask_api_key(api_key: str) -> str:
+    """返回可识别但不可还原的 Key 掩码，仅暴露末四位。"""
+    api_key = api_key.strip()
+    return f"••••••••{api_key[-4:]}" if api_key else ""
+
+
+def _environment_defaults(protocol: str) -> dict:
+    """读取指定协议自己的环境变量，避免切换协议时串用另一协议的配置。"""
     if protocol == "openai":
-        env_base = os.environ.get("OPENAI_BASE_URL", "") or os.environ.get("ANTHROPIC_BASE_URL", "")
-        env_key = (
-            os.environ.get("OPENAI_API_KEY", "")
-            or os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
-            or os.environ.get("ANTHROPIC_API_KEY", "")
-        )
-        env_model = os.environ.get("OPENAI_MODEL", "") or config.MODEL
-    else:
-        env_base = os.environ.get("ANTHROPIC_BASE_URL", "")
-        env_key = (
+        return {
+            "base_url": os.environ.get("OPENAI_BASE_URL", ""),
+            "api_key": os.environ.get("OPENAI_API_KEY", ""),
+            "model": os.environ.get("OPENAI_MODEL", "") or config.MODEL,
+        }
+    return {
+        "base_url": os.environ.get("ANTHROPIC_BASE_URL", ""),
+        "api_key": (
             os.environ.get("ANTHROPIC_AUTH_TOKEN", "")
             or os.environ.get("ANTHROPIC_API_KEY", "")
-        )
-        env_model = config.MODEL
-    return {
-        "protocol": protocol,
-        "base_url": normalize_base(cfg["base_url"] or env_base),
-        "api_key": cfg["api_key"] or env_key,
-        "model": cfg["model"] or env_model,
+        ),
+        "model": config.MODEL,
     }
+
+
+def resolve_ai_config(
+    protocol: str = "", base_url: str = "", api_key: str = "", model: str = ""
+) -> dict:
+    """把表单临时值、已保存配置和环境变量合并为一次调用的实际配置。"""
+    cfg = load_ai_config()
+    selected_protocol = (
+        protocol.strip()
+        or cfg["protocol"]
+        or os.environ.get("WOODPECKER_AI_PROTOCOL", "anthropic")
+    ).lower()
+    if selected_protocol not in ("openai", "anthropic"):
+        raise AnalyzeError(
+            f"AI 接口协议非法: {selected_protocol!r}（应为 openai/anthropic）"
+        )
+    env = _environment_defaults(selected_protocol)
+    saved_applies = not cfg["protocol"] or cfg["protocol"] == selected_protocol
+    return {
+        "protocol": selected_protocol,
+        "base_url": normalize_base(
+            base_url or (cfg["base_url"] if saved_applies else "") or env["base_url"]
+        ),
+        "api_key": api_key.strip() or (cfg["api_key"] if saved_applies else "") or env["api_key"],
+        "model": model.strip() or (cfg["model"] if saved_applies else "") or env["model"],
+    }
+
+
+def _effective() -> dict:
+    """合并用户配置与环境变量，得到当前任务实际生效的配置。"""
+    return resolve_ai_config()
 
 
 def current_model() -> str:
@@ -116,16 +140,16 @@ def list_models(base_url: str = "", api_key: str = "", protocol: str = "") -> li
     入参留空则用当前生效配置。鉴权同时带 Bearer 与 x-api-key 两种头，
     兼容 Anthropic 官方与各类中转代理。
     """
-    eff = _effective()
-    protocol = protocol.strip().lower() or eff["protocol"]
-    if protocol not in ("openai", "anthropic"):
-        raise AnalyzeError(f"不支持的 AI 接口协议: {protocol}")
-    base = normalize_base(base_url) or eff["base_url"]
-    key = api_key.strip() or eff["api_key"]
+    eff = resolve_ai_config(protocol, base_url, api_key)
+    protocol = eff["protocol"]
+    base = eff["base_url"]
+    key = eff["api_key"]
     if not base:
-        raise AnalyzeError("API 地址为空：请填写，或先设置 ANTHROPIC_BASE_URL 环境变量")
+        env_name = "OPENAI_BASE_URL" if protocol == "openai" else "ANTHROPIC_BASE_URL"
+        raise AnalyzeError(f"API 地址为空：请填写，或先设置 {env_name} 环境变量")
     if not key:
-        raise AnalyzeError("API Key 为空：请填写，或先设置 ANTHROPIC_AUTH_TOKEN 环境变量")
+        env_name = "OPENAI_API_KEY" if protocol == "openai" else "ANTHROPIC_API_KEY"
+        raise AnalyzeError(f"API Key 为空：请填写，或先设置 {env_name} 环境变量")
 
     headers = {
         "Authorization": f"Bearer {key}",
@@ -195,9 +219,12 @@ def _openai_content(message: dict) -> str:
     return str(content or "").strip()
 
 
-def _via_openai(system: str, user: str, log) -> str:
+def _via_openai(
+    system: str, user: str, log, eff: dict | None = None,
+    max_tokens: int = config.MAX_TOKENS,
+) -> str:
     """通过 OpenAI 兼容 Chat Completions API 完成覆盖分析。"""
-    eff = _effective()
+    eff = eff or _effective()
     if not eff["base_url"]:
         raise AnalyzeError("OpenAI API 地址为空：请在 AI 设置中填写，或设置 OPENAI_BASE_URL")
     if not eff["api_key"]:
@@ -219,7 +246,7 @@ def _via_openai(system: str, user: str, log) -> str:
     }
 
     def _request(token_field: str) -> dict:
-        payload = {**base_payload, token_field: config.MAX_TOKENS}
+        payload = {**base_payload, token_field: max_tokens}
         req = urllib.request.Request(
             url,
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -262,10 +289,17 @@ def _via_openai(system: str, user: str, log) -> str:
     return report
 
 
-def _via_sdk(system: str, user: str, log) -> str:
+def _via_sdk(
+    system: str, user: str, log, eff: dict | None = None,
+    max_tokens: int = config.MAX_TOKENS,
+) -> str:
     import anthropic
 
-    eff = _effective()
+    eff = eff or _effective()
+    if not eff["api_key"]:
+        raise AnalyzeError(
+            "Anthropic API Key 为空：请在 AI 设置中填写，或设置 ANTHROPIC_API_KEY"
+        )
     kwargs: dict = {}
     if eff["base_url"]:
         kwargs["base_url"] = eff["base_url"]
@@ -279,7 +313,7 @@ def _via_sdk(system: str, user: str, log) -> str:
         chunks: list[str] = []
         with client.messages.stream(
             model=eff["model"],
-            max_tokens=config.MAX_TOKENS,
+            max_tokens=max_tokens,
             system=system,
             messages=[{"role": "user", "content": user}],
             extra_headers=extra_headers,
@@ -304,6 +338,30 @@ def _via_sdk(system: str, user: str, log) -> str:
     return report
 
 
+def test_ai_prompt(
+    question: str, base_url: str = "", api_key: str = "", model: str = "",
+    protocol: str = "", log=lambda _message: None,
+) -> str:
+    """用设置面板当前值发起一次真实试问，不允许降级到 CLI。"""
+    question = question.strip()
+    if not question:
+        raise AnalyzeError("请先填写测试问题")
+    if len(question) > 4000:
+        raise AnalyzeError("测试问题不能超过 4000 个字符")
+    eff = resolve_ai_config(protocol, base_url, api_key, model)
+    if not eff["model"]:
+        raise AnalyzeError("模型为空：请先获取并选择模型")
+    system = "你正在执行 AI 接口连通性测试。请直接、简洁地回答用户问题。"
+    try:
+        if eff["protocol"] == "openai":
+            return _via_openai(system, question, log, eff=eff, max_tokens=512)
+        return _via_sdk(system, question, log, eff=eff, max_tokens=512)
+    except AnalyzeError:
+        raise
+    except Exception as exc:  # SDK 的连接/状态异常统一转换为页面可展示错误
+        raise AnalyzeError(f"AI 测试失败：{exc}") from exc
+
+
 def _via_cli(system: str, user: str, log) -> str:
     exe = shutil.which("claude")
     if not exe:
@@ -322,10 +380,8 @@ def _via_cli(system: str, user: str, log) -> str:
     return report
 
 
-def coverage_analysis(func: str, doc_md: str, test_bundle: str, log=print) -> str:
-    """文档 md + 单测文本 → 覆盖分析报告（md 文本，提示词 v1 六段结构）。"""
-    system = _load_rules()
-    user = _build_user(func, doc_md, test_bundle)
+def _run_analysis(system: str, user: str, log=print) -> str:
+    """按当前 AI 配置执行一次文本分析，复用 sdk/cli 自动降级逻辑。"""
     channel = os.environ.get("WOODPECKER_AI_CHANNEL", "auto")
 
     if channel not in ("sdk", "cli", "auto"):
@@ -341,3 +397,51 @@ def coverage_analysis(func: str, doc_md: str, test_bundle: str, log=print) -> st
             log(f"  ⚠️ sdk 通道失败：{e}")
             log("  自动切换 cli 兜底通道")
     return _via_cli(system, user, log)
+
+
+def coverage_analysis(func: str, doc_md: str, test_bundle: str, log=print) -> str:
+    """文档 md + 单测文本 → 覆盖分析报告（md 文本，提示词 v1 六段结构）。"""
+    return _run_analysis(_load_rules(), _build_user(func, doc_md, test_bundle), log)
+
+
+def pasted_performance_analysis(
+    func: str, report_text: str, task_type: str = "local_analysis", log=print
+) -> str:
+    """将用户粘贴的内容作为独立性能报告分析，不按任务函数名过滤。"""
+    system = """你是一名严谨的软件性能测试专家。用户会提供一段复制粘贴的性能报告，
+请只根据原文分析，不补造缺失字段、用法、耗时或结论。
+
+这份粘贴内容本身就是用户指定要分析的性能数据，必须遵守以下规则：
+- 不得用当前任务函数名筛选、拒绝或忽略报告内容；即使报告中的函数名与当前任务不同，
+  也要分析报告里所有具有可用性能数据的函数或用法。
+- 表格开头的“函数名”“示例”“示例代码”等列只用于标识结果和提供上下文，
+  不作为是否允许分析的前置条件。判定时直接提取 Julia/MATLAB 用时、
+  分支/基准用时、比例等性能字段。
+- 按报告中的每个函数或用法逐项分析。有足够数值的项目必须给出判定；
+  缺少数值时只把对应项目列入“无法判定项”，不能据此声称整份报告不存在或无效。
+- 当前任务函数名和任务类型仅供背景参考，不能覆盖报告自身明确给出的对比口径。
+
+若报告提供了足够的参考耗时 T 和耗时比值 x，可按以下标准逐项判断：
+- T > 1 秒：x > 1.2 才算不通过；
+- 0.1 秒 <= T <= 1 秒：x > 1.25 才算不通过；
+- T < 0.1 秒：x > 1.5 才算不通过；
+- x 恰好等于阈值仍算通过。
+
+对比口径以粘贴报告的明确字段为准：报告给出“分支 Julia / 基准 Julia”时使用该口径；
+报告给出“Julia / MATLAB”或“syslab / matlab”时使用 Julia/MATLAB 口径。不得混用参照系。
+
+请输出 Markdown，严格包含：
+### 用户粘贴的性能报告分析
+#### 数据完整性
+#### 可判定项
+#### 无法判定项
+#### 综合结论
+
+数据不足时，综合结论必须明确写“无法完整判定”，并列出还需要哪些字段。"""
+    user = (
+        f"当前材料函数（仅作背景，不用于筛选报告）：{func}\n"
+        f"任务类型（仅作背景）：{task_type}\n\n"
+        "以下是用户粘贴的性能报告原文：\n\n"
+        f"{report_text.strip()}"
+    )
+    return _run_analysis(system, user, log)

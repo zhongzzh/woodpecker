@@ -20,6 +20,20 @@ class WebArgvTests(unittest.TestCase):
         })
         self.assertIn("--doc-mr", argv)
 
+    def test_local_task_emits_only_local_material_arguments(self):
+        argv = _build_argv({
+            "input_mode": "local",
+            "name": "检查本地材料",
+            "local_code": r"C:\materials\sample.jl",
+            "local_doc": r"C:\materials\sample.md",
+            "perf_report_file": r"C:\Temp\performance.txt",
+        })
+        self.assertIn("--local-code", argv)
+        self.assertIn("--local-doc", argv)
+        self.assertIn("--perf-report-file", argv)
+        self.assertNotIn("--code-mr", argv)
+        self.assertNotIn("--doc-mr", argv)
+
 
 if __name__ == "__main__":
     unittest.main()
