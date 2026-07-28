@@ -41,11 +41,19 @@ class TaskCardTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "没有代码 MR 项目"):
             _ = card.code_project
 
-    def test_local_mode_requires_both_material_paths(self):
-        with self.assertRaisesRegex(ValueError, "必须提供文档文件"):
+    def test_local_mode_parses_function_and_accepts_separate_roots(self):
+        card = TaskCard(
+            name="chromadapt函数", input_mode="local",
+            local_code=str(Path("code")), local_doc=str(Path("docs")),
+        )
+        self.assertEqual(card.func, "chromadapt")
+        self.assertEqual(card.local_code, str(Path("code")))
+        self.assertEqual(card.local_doc, str(Path("docs")))
+
+    def test_local_mode_requires_both_paths(self):
+        with self.assertRaisesRegex(ValueError, "必须提供文档文件或目录"):
             TaskCard(
-                name="检查本地材料", func="sample", input_mode="local",
-                local_code=str(Path("sample.jl")),
+                name="chromadapt函数", input_mode="local", local_code="code"
             )
 
 

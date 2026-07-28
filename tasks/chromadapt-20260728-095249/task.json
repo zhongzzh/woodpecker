@@ -1,0 +1,19 @@
+{
+  "name": "chromadapt函数",
+  "func": "chromadapt",
+  "task_type": "local_analysis",
+  "input_mode": "local",
+  "code_mr": null,
+  "doc_mr": null,
+  "local_code": "C:/Users/TR/Desktop/doc/TyImageProcessing.jl/test/im_math/test_chromadapt.jl",
+  "local_doc": "C:\\Users\\TR\\Desktop\\doc\\syslab-docs-2.0\\syslabHelpSourceCode\\projects\\TyImageProcessing\\Doc\\TyImageProcessing\\Import,Export,andConversion\\Color\\AutomaticWhiteBalance\\chromadapt.md",
+  "code_branch": "本地文件",
+  "doc_branch": "本地文件",
+  "doc_md": "chromadapt.md",
+  "unit_test": "test_chromadapt.jl",
+  "benchmark": null,
+  "perf_note_heading": null,
+  "pasted_performance_report": true,
+  "model": "deepseek-v4-pro-nothinking",
+  "generated_at": "2026-07-28T09:53:32"
+}

@@ -1,0 +1,302 @@
+函数名	示例	julia 首次用时 s	julia 二次用时 s	MATLAB 2025b首次用时 s	MATLAB 2025b 二次用时 s	syslab/matlab首次比例	syslab/matlab二次比例
+imcontour	using TyImageProcessing
+using TyPlot
+using BenchmarkTools
+
+I = imread("rice.png");
+imshow(I)
+
+first_run_time = @elapsed begin
+   imcontour(I, 3);
+end
+
+second_run_time = @belapsed begin
+    imcontour(I, 3);
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+I = imread("rice.png");
+imshow(I)
+
+tic;
+imcontour(I,3);
+first_run_time = toc;
+
+tic;
+imcontour(I,3);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)	0.593346	3.94E-02	0.305585	0.062642		
+bwdistgeodesic 	using TyImageProcessing
+using BenchmarkTools
+
+BW = [
+    1 1 1 1 1 1 1 1 1 1
+    1 1 1 1 1 1 0 0 1 1
+    1 1 1 1 1 1 0 0 1 1
+    1 1 1 1 1 1 0 0 1 1
+    0 0 0 0 0 1 0 0 1 0
+    0 0 0 0 1 1 0 1 1 0
+    0 1 0 0 1 1 0 0 0 0
+    0 1 1 1 1 1 1 0 1 0
+    0 1 1 0 0 0 1 1 1 0
+    0 0 0 0 1 0 0 0 0 0
+];
+BW = Bool.(BW);
+
+C = [1 2 3 3 3];
+R = [3 3 3 1 2];
+
+first_run_time = @elapsed begin
+   D = bwdistgeodesic(BW, C, R)
+end
+
+second_run_time = @belapsed begin
+    D = bwdistgeodesic(BW, C, R)
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+BW = [1 1 1 1 1 1 1 1 1 1;...
+     1 1 1 1 1 1 0 0 1 1;...
+     1 1 1 1 1 1 0 0 1 1;...
+     1 1 1 1 1 1 0 0 1 1;...
+     0 0 0 0 0 1 0 0 1 0;...
+     0 0 0 0 1 1 0 1 1 0;...
+     0 1 0 0 1 1 0 0 0 0;...
+     0 1 1 1 1 1 1 0 1 0;...
+     0 1 1 0 0 0 1 1 1 0;...
+     0 0 0 0 1 0 0 0 0 0];
+BW = logical(BW);
+C = [1 2 3 3 3];
+R = [3 3 3 1 2];
+
+tic;
+D = bwdistgeodesic(BW,C,R);
+first_run_time = toc;
+
+tic;
+D = bwdistgeodesic(BW,C,R);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)	1.5254387	1.34E-05	0.102425	0.001689	14.893226	0.079337
+chromadapt	using TyImageProcessing
+using TyPlot
+using BenchmarkTools
+
+A = imread("hallway.jpg");
+imshow(A)
+title("Original Image")
+
+x = 2800;
+y = 1000;
+gray_val = impixel(A, x, y);
+hold("on")
+plot(x, y, "."; color="g");
+hold("off")
+
+first_run_time = @elapsed begin
+   B = chromadapt(A, gray_val);
+end
+
+second_run_time = @belapsed begin
+   B = chromadapt(A, gray_val);
+end
+
+figure()
+imshow(B)
+title("White-Balanced Image")
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+filename = fullfile(matlabroot,"toolbox","images","imdata","hallway.jpg");
+A = imread(filename);
+
+imshow(A)
+title("Original Image")
+
+x = 2800;
+y = 1000;
+gray_val = impixel(A,x,y)
+hold on
+plot(x,y,".","Color","g")
+hold off
+
+tic;
+B = chromadapt(A,gray_val);
+first_run_time = toc;
+
+tic;
+B = chromadapt(A,gray_val);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)
+
+figure
+imshow(B)
+title("White-Balanced Image")	11.0412721	4.8529529	1.529016	1.331454	2.275163	2.1330132
+jaccard	using TyImageProcessing
+using BenchmarkTools
+
+A = imread("hands1.jpg");
+I = im2gray(A);
+mask = falses(size(I));
+mask[25:(end - 25), 25:(end - 25)] .= true;
+BW = activecontour(I, mask, 300);
+BW_groundTruth = imread("hands1-mask.png") .!= 0;
+
+first_run_time = @elapsed begin
+   similarity = jaccard(BW, BW_groundTruth);
+end
+
+second_run_time = @belapsed begin
+    similarity = jaccard(BW, BW_groundTruth);
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+A = imread('hands1.jpg');
+I = im2gray(A);
+figure
+imshow(I)
+title('Original Image')
+
+mask = false(size(I));
+mask(25:end-25,25:end-25) = true;
+BW = activecontour(I, mask, 300);
+
+BW_groundTruth = imread('hands1-mask.png');
+
+tic;
+similarity = jaccard(BW, BW_groundTruth);
+first_run_time = toc;
+
+tic;
+similarity = jaccard(BW, BW_groundTruth);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)	1.5880196	8.25E-05	1.5880196	0.004363	0.000556	
+graycomatrix	using TyImageProcessing
+using BenchmarkTools
+
+I = [1.0 1 5 6 8 8; 2 3 5 7 0 2; 0 2 3 5 6 7]
+
+first_run_time = @elapsed begin
+   glcm, SI = graycomatrix(I; NumLevels=9, GrayLimits=Float64[])
+end
+
+second_run_time = @belapsed begin
+   glcm, SI = graycomatrix(I; NumLevels=9, GrayLimits=Float64[])
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+I = [ 1 1 5 6 8 8; 2 3 5 7 0 2; 0 2 3 5 6 7]
+
+tic;
+[glcm,SI] = graycomatrix(I,'NumLevels',9,'GrayLimits',[])
+first_run_time = toc;
+
+tic;
+[glcm,SI] = graycomatrix(I,'NumLevels',9,'GrayLimits',[])
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)	3.4506785	2.82E-05	0.114132	0.006451	30.234102	0.004371
+graycoprops	using TyImageProcessing
+using BenchmarkTools
+
+I = [1.0 1 5 6 8 8; 2 3 5 7 0 2; 0 2 3 5 6 7]
+
+first_run_time = @elapsed begin
+   glcm, SI = graycomatrix(I; NumLevels=9, GrayLimits=Float64[])
+end
+
+second_run_time = @belapsed begin
+   glcm, SI = graycomatrix(I; NumLevels=9, GrayLimits=Float64[])
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+glcm = [0 1 2 3;1 1 2 3;1 0 2 0;0 0 0 3]
+
+tic;
+stats = graycoprops(glcm)
+first_run_time = toc;
+
+tic;
+stats = graycoprops(glcm)
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)	1.2185181	1.64E-06	0.064228	0.002055	18.971758	0.000798
+graydiffweight	using TyImageProcessing
+using BenchmarkTools
+
+I = imread("cameraman.tif");
+refGrayVal = I[159, 67];
+
+first_run_time = @elapsed begin
+   W = graydiffweight(I, refGrayVal);
+end
+
+second_run_time = @belapsed begin
+   W = graydiffweight(I, refGrayVal);
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+glcm = [0 1 2 3;1 1 2 3;1 0 2 0;0 0 0 3]
+
+tic;
+stats = graycoprops(glcm)
+first_run_time = toc;
+
+tic;
+stats = graycoprops(glcm)
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)	0.8472578	0.0006621	0.034634	0.001271	24.463181	0.520928
+integralImage3	using TyImageProcessing
+using BenchmarkTools
+
+I = reshape(1:125, 5, 5, 5);
+
+# mtest-setup end
+
+first_run_time = @elapsed begin
+   J = integralImage3(I);
+end
+
+second_run_time = @belapsed begin
+   J = integralImage3(I);
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+glcm = [0 1 2 3;1 1 2 3;1 0 2 0;0 0 0 3]
+
+tic;
+stats = graycoprops(glcm)
+first_run_time = toc;
+
+tic;
+stats = graycoprops(glcm)
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)	0.5864383	1.71E-06	0.056877	0.000345	10.310641	0.004956

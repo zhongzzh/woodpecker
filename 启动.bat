@@ -5,19 +5,12 @@ rem First run bootstraps .venv/dependencies/Chromium automatically.
 chcp 65001 >nul
 cd /d "%~dp0"
 
-call :find_python
-if errorlevel 1 goto :no_python
-
 if /i "%~1"=="--check" goto :check_only
-
-%PYTHON_CMD% -m pipeline.bootstrap
-if errorlevel 1 goto :bootstrap_failed
-
 if /i "%~1"=="--login-only" goto :login_only
 
 :launch
-rem pythonw runs the local service without leaving a terminal window visible.
-start "" ".venv\Scripts\pythonw.exe" -m pipeline.web
+rem Hand off immediately; use 启动.vbs directly to avoid even the brief cmd flash.
+start "" wscript.exe "%~dp0启动.vbs"
 exit /b 0
 
 :find_python
@@ -39,10 +32,16 @@ if not errorlevel 1 (
 exit /b 1
 
 :check_only
+call :find_python
+if errorlevel 1 goto :no_python
 %PYTHON_CMD% -m pipeline.bootstrap --check
 exit /b %errorlevel%
 
 :login_only
+call :find_python
+if errorlevel 1 goto :no_python
+%PYTHON_CMD% -m pipeline.bootstrap
+if errorlevel 1 goto :bootstrap_failed
 ".venv\Scripts\python.exe" -m pipeline.login
 if errorlevel 1 goto :login_failed
 echo.

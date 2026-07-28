@@ -11,8 +11,8 @@
       --code-mr https://git.tongyuan.cc/.../merge_requests/NNN
 
 本地材料用法：
-  python -m pipeline.run --name "分析 polydiv" --func polydiv \
-      --local-code C:\\path\\to\\polydiv.jl --local-doc C:\\path\\to\\polydiv.md \
+  python -m pipeline.run --name "polydiv函数" \
+      --local-code C:\\path\\to\\code --local-doc C:\\path\\to\\docs \
       [--perf-report-file C:\\path\\to\\performance.txt]
 
 步骤（docs/07 §1 管线）：
@@ -37,14 +37,27 @@ def _log(msg: str) -> None:
     print(msg, flush=True)
 
 
+def _snapshot_material(source: Path, materials: Path) -> Path:
+    """复制材料快照；不同目录的同名文件使用序号保留，避免相互覆盖。"""
+    target = materials / source.name
+    index = 2
+    while target.exists():
+        target = materials / f"{source.stem}-{index}{source.suffix}"
+        index += 1
+    shutil.copy2(source, target)
+    return target
+
+
 def _performance_email_text(result: dict | None, performed: bool = True) -> str:
     """性能明细转换成总结邮件中的简短结论。"""
     if not performed:
         return "本次未进行性能分析"
     if not result:
         return "性能验证待确认"
+    if result.get("mode") == "ai_failed":
+        return "性能测试 AI 分析失败（原始报告已保留）"
     if result.get("mode") == "pasted":
-        return "已分析用户粘贴的性能报告信息"
+        return result.get("verdict") or "性能测试结论无法判定"
     if result.get("mode") == "performance_optimization":
         if result["passed"] is True:
             return "性能验证通过（未衰退）"
@@ -62,10 +75,11 @@ def _performance_email_text(result: dict | None, performed: bool = True) -> str:
 
 def _summary_email(
     card: TaskCard, perf_result: dict | None, performance_performed: bool = True,
-    functional_performed: bool = True,
+    functional_performed: bool = True, local_code_files: list[Path] | None = None,
+    local_doc_files: list[Path] | None = None,
 ) -> str:
     """生成可直接复制的周提测总结邮件文本；版本号由测试人员手填。"""
-    library = card.code_repo_name.removesuffix(".jl")
+    library = card.func if card.is_local else card.code_repo_name.removesuffix(".jl")
     functional_text = "功能验证通过" if functional_performed else "功能验证未进行"
     lines = [
         f"{card.name}，{functional_text}，"
@@ -76,10 +90,10 @@ def _summary_email(
             "分析材料来自用户电脑本地文件：",
             "",
             "代码/单测：",
-            card.local_code,
+            *(str(path) for path in (local_code_files or [Path(card.local_code)])),
             "",
             "帮助文档：",
-            card.local_doc,
+            *(str(path) for path in (local_doc_files or [Path(card.local_doc)])),
         ]
     else:
         lines += [
@@ -108,13 +122,20 @@ def run(card: TaskCard, skip_ai: bool = False,
 
     # ---- 步骤 1/5 文档侧 --------------------------------------------------
     if card.is_local:
-        _log("[1/5] 读取用户指定的本地文档")
-        doc_md_path = locate.local_file(card.local_doc, "本地文档")
-        doc_md = doc_md_path.read_text(encoding="utf-8", errors="replace")
-        doc_rel = doc_md_path.name
-        shutil.copy2(doc_md_path, materials / doc_md_path.name)
+        _log("[1/5] 根据函数名定位本地文档")
+        unit = locate.find_local_unit_test(card.local_code, card.func, log=lambda _msg: None)
+        doc_search_root = card.local_doc
+        local_doc_files = locate.find_local_docs(doc_search_root, card.func, log=_log)
+        doc_md = "\n\n".join(
+            f"<!-- 本地文档：{path} -->\n"
+            + path.read_text(encoding="utf-8", errors="replace")
+            for path in local_doc_files
+        )
+        doc_rel = local_doc_files[0].name
+        for doc_path in local_doc_files:
+            _snapshot_material(doc_path, materials)
         doc_info = {"source_branch": "本地文件", "perf_note": None}
-        doc_source = f"用户本地文件 `{doc_md_path}`"
+        doc_source = "用户本地文件 " + "、".join(f"`{path}`" for path in local_doc_files)
     elif card.is_new_function:
         _log("[1/5] 文档 MR 取数")
         if doc_branch:
@@ -148,8 +169,9 @@ def run(card: TaskCard, skip_ai: bool = False,
 
     # ---- 步骤 2/5 代码侧：MR → 分支 → 单测 + 性能报告 --------------------
     if card.is_local:
-        _log("[2/5] 读取用户指定的本地代码/单测")
-        unit = locate.find_local_unit_test(card.local_code, card.func, log=_log)
+        _log("[2/5] 根据函数名定位本地代码/单测")
+        _log(f"  本地代码/单测: {unit['main']}"
+             + (f"（另找到相关文件 {len(unit['companions'])} 个）" if unit["companions"] else ""))
         code_repo = unit["root"]
         code_info = {"source_branch": "本地文件", "perf_note": None}
         bench = None
@@ -166,25 +188,44 @@ def run(card: TaskCard, skip_ai: bool = False,
         bench = locate.find_benchmark_dir(code_repo, card.func, log=_log)
     test_bundle = locate.read_test_bundle(unit)
     for p in [unit["main"], *unit["companions"]]:
-        shutil.copy2(p, materials / p.name)
+        _snapshot_material(p, materials)
 
     # ---- 步骤 3/5 AI 覆盖分析 --------------------------------------------
+    coverage_ai_error = None
+    functional_performed = False
     if skip_ai:
         _log("[3/5] AI 覆盖分析：--no-ai 跳过")
         coverage_md = "> （本次运行使用 --no-ai 跳过了 AI 覆盖分析。）"
+        coverage_ai_status = "skipped"
     else:
         _log("[3/5] AI 覆盖分析")
-        coverage_md = analyze.coverage_analysis(card.func, doc_md, test_bundle, log=_log)
+        try:
+            coverage_md = analyze.coverage_analysis(card.func, doc_md, test_bundle, log=_log)
+            coverage_ai_status = "completed"
+            functional_performed = True
+        except analyze.AnalyzeError as exc:
+            coverage_ai_status = "failed"
+            coverage_ai_error = str(exc).replace("\r", " ").replace("\n", " ").strip()
+            coverage_md = (
+                "> ⚠️ **AI 覆盖分析失败**\n>\n"
+                "> 已固定使用当前 AI 配置，调用失败时最多尝试三次，未切换其他通道或模型。"
+                "本节无法生成，但任务会继续输出其余材料与报告。\n>\n"
+                f"> 失败原因：{coverage_ai_error}"
+            )
+            _log(f"  ⚠️ AI 覆盖分析失败，继续生成报告：{coverage_ai_error}")
 
     # ---- 步骤 4/5 性能判定 ------------------------------------------------
     _log("[4/5] 性能判定")
     perf_result = None
     performance_performed = False
+    performance_ai_status = "not_used"
+    performance_ai_error = None
     if card.is_local:
         pasted = perf_report_text.strip()
         if pasted:
             (materials / "性能报告-用户粘贴.txt").write_text(pasted, encoding="utf-8")
             if skip_ai:
+                performance_ai_status = "skipped"
                 perf_md = (
                     "### 用户粘贴的性能报告分析\n\n"
                     "> 本次运行使用 `--no-ai`，已保存用户粘贴的性能报告原文，"
@@ -193,12 +234,30 @@ def run(card: TaskCard, skip_ai: bool = False,
                 _log("  已保存粘贴的性能报告；--no-ai 跳过分析")
             else:
                 performance_performed = True
-                perf_md = analyze.pasted_performance_analysis(
-                    card.func, pasted, card.task_type, log=_log
-                )
-                _log("  用户粘贴的性能报告分析完成")
-                perf_result = {"mode": "pasted", "passed": None}
+                try:
+                    perf_md = analyze.pasted_performance_analysis(
+                        card.func, pasted, card.task_type, log=_log
+                    )
+                    performance_ai_status = "completed"
+                    _log("  用户粘贴的性能报告分析完成")
+                    perf_result = {
+                        "mode": "pasted",
+                        "verdict": analyze.performance_verdict_from_markdown(perf_md),
+                    }
+                except analyze.AnalyzeError as exc:
+                    performance_ai_status = "failed"
+                    performance_ai_error = str(exc).replace("\r", " ").replace("\n", " ").strip()
+                    perf_result = {"mode": "ai_failed", "passed": None}
+                    perf_md = (
+                        "### 用户粘贴的性能报告分析\n\n"
+                        "> ⚠️ **性能测试 AI 分析失败**\n>\n"
+                        "> 已固定使用当前 AI 配置，调用失败时最多尝试三次，未切换其他通道或模型。"
+                        "性能报告原文已保存在材料快照中，覆盖分析结果不受影响。\n>\n"
+                        f"> 失败原因：{performance_ai_error}"
+                    )
+                    _log(f"  ⚠️ 性能测试 AI 分析失败，继续生成报告：{performance_ai_error}")
         else:
+            performance_ai_status = "not_requested"
             perf_md = (
                 "### 性能分析\n\n"
                 "> 本次使用本地材料，用户未提供性能报告；按本地模式约定，"
@@ -241,7 +300,7 @@ def run(card: TaskCard, skip_ai: bool = False,
     if card.is_local:
         task_source = f"{card.name}（本地材料：{unit['main']}）"
         task_type_text = "本地材料分析"
-        rule_text = "提示词 v1（本地文档/代码覆盖分析）"
+        rule_text = "提示词 v2（本地文档/代码覆盖分析）"
         if performance_performed:
             rule_text += "＋用户粘贴性能报告分析"
     else:
@@ -251,9 +310,13 @@ def run(card: TaskCard, skip_ai: bool = False,
         )
         task_type_text = "性能优化" if card.is_performance_optimization else "新增函数"
         rule_text = (
-            "提示词 v1（D20）＋性能标准 "
+            "提示词 v2（D20）＋性能标准 "
             f"{'D13/D15/D16/D23~D28' if card.is_performance_optimization else 'D13/D15/D16'}"
         )
+    try:
+        report_model = None if skip_ai else analyze.current_model()
+    except analyze.AnalyzeError:
+        report_model = "配置不可用"
     header = "\n".join([
         f"# {card.func} 提测分析报告",
         "",
@@ -264,16 +327,27 @@ def run(card: TaskCard, skip_ai: bool = False,
         + (f"（伴随数据 {len(unit['companions'])} 个）" if unit["companions"] else ""),
         f"> benchmark：`{bench_rel}`" if bench_rel else "> benchmark：未定位到",
         f"> 分析规则：{rule_text} ｜ "
-        f"生成：{datetime.now():%Y-%m-%d %H:%M} ｜ 模型：{'—' if skip_ai else analyze.current_model()}",
+        f"生成：{datetime.now():%Y-%m-%d %H:%M} ｜ 模型：{report_model or '—'}",
     ])
+    summary_email = _summary_email(
+        card, perf_result, performance_performed, functional_performed,
+        [unit["main"], *unit["companions"]] if card.is_local else None,
+        local_doc_files if card.is_local else None,
+    )
+    if card.is_local and performance_ai_status == "completed":
+        performance_heading = "## 二、性能测试判定（AI，仅当前函数）"
+    elif card.is_local:
+        performance_heading = "## 二、性能测试判定"
+    else:
+        performance_heading = "## 二、性能测试判定（脚本演算）"
     report = "\n\n".join([
         header,
         "## 一、单元测试覆盖分析（AI）",
         coverage_md,
-        "## 二、性能测试判定（脚本演算）",
+        performance_heading,
         perf_md,
         "## 三、总结邮件格式（可直接复制）",
-        f"```text\n{_summary_email(card, perf_result, performance_performed, not skip_ai)}\n```",
+        f"```text\n{summary_email}\n```",
     ]) + "\n"
     report_path = out_dir / "分析报告.md"
     report_path.write_text(report, encoding="utf-8")
@@ -283,14 +357,27 @@ def run(card: TaskCard, skip_ai: bool = False,
         "task_type": card.task_type,
         "input_mode": card.input_mode,
         "code_mr": card.code_mr or None, "doc_mr": card.doc_mr or None,
-        "local_code": card.local_code or None, "local_doc": card.local_doc or None,
+        "local_code": str(unit["main"]) if card.is_local else None,
+        "local_doc": str(local_doc_files[0]) if card.is_local else None,
+        "local_code_input": card.local_code if card.is_local else None,
+        "local_doc_input": card.local_doc if card.is_local else None,
+        "local_code_files": [str(path) for path in [unit["main"], *unit["companions"]]]
+        if card.is_local else [],
+        "local_doc_files": [str(path) for path in local_doc_files] if card.is_local else [],
         "code_branch": code_info["source_branch"], "doc_branch": doc_info["source_branch"],
         "doc_md": doc_rel,
         "unit_test": unit_rel,
         "benchmark": bench_rel,
         "perf_note_heading": code_info["perf_note"]["heading"] if code_info["perf_note"] else None,
         "pasted_performance_report": card.is_local and bool(perf_report_text.strip()),
-        "model": None if skip_ai else analyze.current_model(),
+        "coverage_ai_status": coverage_ai_status,
+        "coverage_ai_error": coverage_ai_error,
+        "performance_ai_status": performance_ai_status,
+        "performance_ai_error": performance_ai_error,
+        "performance_verdict": _performance_email_text(
+            perf_result, performance_performed
+        ),
+        "model": report_model,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
     }, ensure_ascii=False, indent=2), encoding="utf-8")
 
@@ -311,8 +398,9 @@ def main() -> None:
     ap.add_argument("--code-mr", default="", help="代码 MR 链接（在线模式必填）")
     ap.add_argument("--doc-mr", default="", help="文档 MR 链接（仅新增函数任务必填）")
     ap.add_argument("--local-code", default="",
-                    help="本地代码/单测文件或目录；填写后启用本地材料模式")
-    ap.add_argument("--local-doc", default="", help="本地文档文件（本地材料模式必填）")
+                    help="代码/单测文件或母目录；填写后启用本地材料模式")
+    ap.add_argument("--local-doc", default="",
+                    help="文档文件或母目录（本地材料模式必填）")
     ap.add_argument("--perf-report-file", default="",
                     help="可选：用户复制保存的性能报告文本文件")
     ap.add_argument("--func", default="", help="函数名（缺省从任务名解析）")

@@ -15,6 +15,7 @@ stdout 逐行收进日志，「中止」= 强杀子进程树（连带 playwright
   GET  /api/tasks            历史任务列表（tasks/ 下有 分析报告.md 的目录）
   GET  /api/report?dir=xxx   某次任务的报告原文（md）
   GET  /api/ai-config        AI 设置（OpenAI/Anthropic 双协议；POST 同路径保存）
+  GET  /api/analysis-prompt  当前覆盖分析提示词（POST 保存或恢复默认）
   POST /api/ai-models        按所选协议获取端点模型清单
   POST /api/ai-test          使用设置面板当前值发送一次自定义问题
 """
@@ -24,6 +25,7 @@ from __future__ import annotations
 import atexit
 import json
 import os
+import socket
 import shutil
 import subprocess
 import sys
@@ -40,6 +42,7 @@ from .taskcard import TaskCard
 
 HOST, PORT = "127.0.0.1", 8737
 STATIC_DIR = config.PROJECT_ROOT / "pipeline" / "static"
+INDEX_HTML = (STATIC_DIR / "index.html").read_bytes()
 REPORT_NAME = "分析报告.md"
 
 
@@ -141,13 +144,34 @@ def _build_argv(payload: dict) -> list[str]:
     return argv
 
 
+def _hidden_process_kwargs() -> dict:
+    """Windows GUI 模式下禁止子进程创建控制台窗口。"""
+    if sys.platform == "win32":
+        return {"creationflags": subprocess.CREATE_NO_WINDOW}
+    return {}
+
+
+def _service_is_running() -> bool:
+    """启动前探测已有实例，避免 Windows 的端口复用留下重复后台进程。"""
+    try:
+        with socket.create_connection((HOST, PORT), timeout=0.25):
+            return True
+    except OSError:
+        return False
+
+
 def _select_local_file(kind: str) -> str:
     """用系统文件对话框选择材料；浏览器本身不会暴露本地文件的真实路径。"""
     choices = {
         "code": ("选择 Julia 代码或单测", [("Julia 文件", "*.jl"), ("所有文件", "*.*")]),
         "doc": ("选择函数文档", [("Markdown 文件", "*.md"), ("所有文件", "*.*")]),
     }
-    if kind not in choices:
+    directories = {
+        "root": "选择本地材料母目录",
+        "code_dir": "选择代码/单测母目录",
+        "doc_dir": "选择函数文档母目录",
+    }
+    if kind not in directories and kind not in choices:
         raise ValueError(f"不支持的文件类型：{kind!r}")
     try:
         import tkinter as tk
@@ -163,6 +187,11 @@ def _select_local_file(kind: str) -> str:
     try:
         root.attributes("-topmost", True)
         root.update()
+        if kind in directories:
+            try:
+                return str(filedialog.askdirectory(parent=root, title=directories[kind]))
+            except tk.TclError as exc:
+                raise RuntimeError(f"系统目录选择器执行失败：{exc}") from exc
         title, filetypes = choices[kind]
         try:
             return str(filedialog.askopenfilename(
@@ -213,6 +242,7 @@ def _start_job(payload: dict) -> tuple[bool, str]:
             stdout=subprocess.PIPE, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL,
             text=True, encoding="utf-8", errors="replace",
             env=env,
+            **_hidden_process_kwargs(),
         )
     except OSError as e:
         if temp_perf_path:
@@ -271,6 +301,7 @@ def _stop_job() -> tuple[bool, str]:
     kill = subprocess.run(
         ["taskkill", "/F", "/T", "/PID", str(pid)],
         capture_output=True, text=True,
+        **_hidden_process_kwargs(),
     )
     if kill.returncode != 0:
         try:
@@ -286,7 +317,7 @@ def _kill_on_exit() -> None:
         proc = _job.proc
     if proc and proc.poll() is None:
         subprocess.run(["taskkill", "/F", "/T", "/PID", str(proc.pid)],
-                       capture_output=True)
+                       capture_output=True, **_hidden_process_kwargs())
 
 
 def _list_tasks() -> list[dict]:
@@ -312,6 +343,97 @@ def _read_report(dirname: str) -> str | None:
     return None
 
 
+def _public_ai_config() -> dict:
+    """生成浏览器可见的 AI 配置，任何档案都不包含明文 Key。"""
+    store = analyze.load_ai_config_store()
+    public_profiles = []
+    for profile in store["profiles"]:
+        public_profiles.append({
+            "id": profile["id"],
+            "name": profile["name"],
+            "protocol": profile["protocol"],
+            "base_url": profile["base_url"],
+            "model": profile["model"],
+            "has_saved_key": bool(profile["api_key"]),
+            "api_key_masked": analyze.mask_api_key(profile["api_key"]),
+        })
+    active_id = store["active_profile_id"]
+    active = next((p for p in public_profiles if p["id"] == active_id), None)
+    cfg = dict(active) if active else {
+        "id": "", "name": "环境变量默认", "protocol": "", "base_url": "",
+        "model": "", "has_saved_key": False, "api_key_masked": "",
+    }
+    cfg["api_key"] = ""
+    cfg["active_profile_id"] = active_id
+    cfg["profiles"] = public_profiles
+
+    default_protocol = os.environ.get("WOODPECKER_AI_PROTOCOL", "anthropic").lower()
+    if default_protocol not in ("openai", "anthropic"):
+        default_protocol = "anthropic"
+    effective_protocol = cfg["protocol"] or default_protocol
+    env_base_urls = {
+        "openai": os.environ.get("OPENAI_BASE_URL", ""),
+        "anthropic": os.environ.get("ANTHROPIC_BASE_URL", ""),
+    }
+    has_env_keys = {
+        "openai": bool(os.environ.get("OPENAI_API_KEY")),
+        "anthropic": bool(
+            os.environ.get("ANTHROPIC_AUTH_TOKEN")
+            or os.environ.get("ANTHROPIC_API_KEY")
+        ),
+    }
+    default_models = {
+        "openai": os.environ.get("OPENAI_MODEL", "") or config.MODEL,
+        "anthropic": config.MODEL,
+    }
+    cfg.update({
+        "default_protocol": default_protocol,
+        "effective_protocol": effective_protocol,
+        "env_base_urls": env_base_urls,
+        "has_env_keys": has_env_keys,
+        "default_models": default_models,
+        "env_base_url": env_base_urls[effective_protocol],
+        "has_env_key": has_env_keys[effective_protocol],
+        "default_model": default_models[effective_protocol],
+    })
+    return cfg
+
+
+def _profile_api_key(payload: dict) -> str:
+    """取表单新 Key；留空时仅可复用请求所指档案的服务端 Key。"""
+    api_key = str(payload.get("api_key", "")).strip()
+    if api_key:
+        return api_key
+    profile = analyze.get_ai_profile(str(payload.get("profile_id", "")))
+    return profile["api_key"] if profile else ""
+
+
+def _coverage_prompt_payload() -> dict:
+    prompt = analyze.load_coverage_prompt()
+    return {
+        "prompt": prompt,
+        "customized": analyze.coverage_prompt_is_customized(),
+        "characters": len(prompt),
+    }
+
+
+def _resolve_local_materials(card: TaskCard) -> dict:
+    """预定位本地材料，返回用于回填的首选路径和完整命中列表。"""
+    unit = locate.find_local_unit_test(
+        card.local_code, card.func, log=lambda _message: None
+    )
+    docs = locate.find_local_docs(
+        card.local_doc, card.func, log=lambda _message: None
+    )
+    code_files = [unit["main"], *unit["companions"]]
+    return {
+        "local_code": str(unit["main"]),
+        "local_doc": str(docs[0]),
+        "local_code_files": [str(path) for path in code_files],
+        "local_doc_files": [str(path) for path in docs],
+    }
+
+
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
@@ -329,8 +451,8 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802（http.server 约定）
         u = urlparse(self.path)
         if u.path == "/":
-            html = (STATIC_DIR / "index.html").read_bytes()
-            self._send(200, html, "text/html; charset=utf-8")
+            # 与已加载的 Python 后台保持同一版本，避免源码更新后新页面调用旧接口。
+            self._send(200, INDEX_HTML, "text/html; charset=utf-8")
         elif u.path == "/favicon.ico":
             self.send_response(204)
             self.end_headers()
@@ -356,43 +478,12 @@ class Handler(BaseHTTPRequestHandler):
         elif u.path == "/api/tasks":
             self._json(_list_tasks())
         elif u.path == "/api/ai-config":
-            cfg = analyze.load_ai_config()
-            # 页面只需要知道是否已保存，绝不把完整 Key 回传给浏览器。
-            cfg["has_saved_key"] = bool(cfg["api_key"])
-            cfg["api_key_masked"] = analyze.mask_api_key(cfg["api_key"])
-            cfg["api_key"] = ""
-            # 环境变量兜底情况给前端做占位提示（不回传环境变量里的 Key 本身）。
-            default_protocol = os.environ.get("WOODPECKER_AI_PROTOCOL", "anthropic").lower()
-            if default_protocol not in ("openai", "anthropic"):
-                default_protocol = "anthropic"
-            effective_protocol = cfg["protocol"] or default_protocol
-            env_base_urls = {
-                "openai": os.environ.get("OPENAI_BASE_URL", ""),
-                "anthropic": os.environ.get("ANTHROPIC_BASE_URL", ""),
-            }
-            has_env_keys = {
-                "openai": bool(os.environ.get("OPENAI_API_KEY")),
-                "anthropic": bool(
-                    os.environ.get("ANTHROPIC_AUTH_TOKEN")
-                    or os.environ.get("ANTHROPIC_API_KEY")
-                ),
-            }
-            default_models = {
-                "openai": os.environ.get("OPENAI_MODEL", "") or config.MODEL,
-                "anthropic": config.MODEL,
-            }
-            cfg.update({
-                "default_protocol": default_protocol,
-                "effective_protocol": effective_protocol,
-                "env_base_urls": env_base_urls,
-                "has_env_keys": has_env_keys,
-                "default_models": default_models,
-                # 兼容旧前端字段。
-                "env_base_url": env_base_urls[effective_protocol],
-                "has_env_key": has_env_keys[effective_protocol],
-                "default_model": default_models[effective_protocol],
-            })
-            self._json(cfg)
+            self._json(_public_ai_config())
+        elif u.path == "/api/analysis-prompt":
+            try:
+                self._json(_coverage_prompt_payload())
+            except (analyze.AnalyzeError, OSError) as e:
+                self._json({"error": str(e)}, 500)
         elif u.path == "/api/report":
             dirname = parse_qs(u.query).get("dir", [""])[0]
             text = _read_report(dirname)
@@ -432,6 +523,7 @@ class Handler(BaseHTTPRequestHandler):
                     self._json({"ok": False, "message": f"输入有误: 缺少必填项 {field}"}, 400)
                     return
             try:
+                resolved_paths = None
                 card = TaskCard(
                     name=str(payload.get("name", "")).strip(),
                     code_mr=str(payload.get("code_mr", "")).strip(),
@@ -442,10 +534,7 @@ class Handler(BaseHTTPRequestHandler):
                     local_doc=str(payload.get("local_doc", "")).strip(),
                 )
                 if card.is_local:
-                    locate.local_file(card.local_doc, "本地文档")
-                    locate.find_local_unit_test(
-                        card.local_code, card.func, log=lambda _message: None
-                    )
+                    resolved_paths = _resolve_local_materials(card)
                 else:
                     # 提前验证 URL 结构，避免启动子进程后才失败。
                     _ = card.code_project
@@ -457,7 +546,10 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "message": f"输入有误: {e}"}, 400)
                 return
             ok, message = _start_job(payload)
-            self._json({"ok": ok, "message": message}, 200 if ok else 409)
+            self._json(
+                {"ok": ok, "message": message, "resolved_paths": resolved_paths},
+                200 if ok else 409,
+            )
         elif path == "/api/stop":
             ok, message = _stop_job()
             self._json({"ok": ok, "message": message}, 200 if ok else 409)
@@ -465,7 +557,7 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 models = analyze.list_models(
                     str(payload.get("base_url", "")),
-                    str(payload.get("api_key", "")),
+                    _profile_api_key(payload),
                     str(payload.get("protocol", "")),
                 )
                 self._json({"ok": True, "models": models})
@@ -476,7 +568,7 @@ class Handler(BaseHTTPRequestHandler):
                 answer = analyze.test_ai_prompt(
                     str(payload.get("question", "")),
                     str(payload.get("base_url", "")),
-                    str(payload.get("api_key", "")),
+                    _profile_api_key(payload),
                     str(payload.get("model", "")),
                     str(payload.get("protocol", "")),
                 )
@@ -485,20 +577,48 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "message": str(e)}, 400)
         elif path == "/api/ai-config":
             try:
-                api_key = str(payload.get("api_key", ""))
-                saved_key = analyze.load_ai_config()["api_key"]
-                if (
-                    api_key.strip() == analyze.mask_api_key(saved_key)
-                    or (not api_key.strip() and payload.get("keep_api_key"))
-                ):
-                    api_key = saved_key
-                analyze.save_ai_config(
-                    str(payload.get("base_url", "")),
-                    api_key,
-                    str(payload.get("model", "")),
-                    str(payload.get("protocol", "")),
-                )
-                self._json({"ok": True, "message": "已保存"})
+                action = str(payload.get("action", "save")).strip().lower()
+                profile_id = str(payload.get("profile_id", "")).strip()
+                if action == "save":
+                    saved = analyze.get_ai_profile(profile_id)
+                    api_key = str(payload.get("api_key", "")).strip()
+                    if not api_key and payload.get("keep_api_key") and saved:
+                        api_key = saved["api_key"]
+                    profile_id = analyze.save_ai_profile(
+                        profile_id,
+                        str(payload.get("name", "")),
+                        str(payload.get("base_url", "")),
+                        api_key,
+                        str(payload.get("model", "")),
+                        str(payload.get("protocol", "")),
+                    )
+                    message = "公益站配置已保存并启用"
+                elif action == "activate":
+                    analyze.activate_ai_profile(profile_id)
+                    message = "已切换当前公益站"
+                elif action == "delete":
+                    analyze.delete_ai_profile(profile_id)
+                    message = "公益站配置已删除"
+                elif action == "use_default":
+                    analyze.activate_ai_profile("")
+                    message = "已改用环境变量默认配置"
+                else:
+                    raise analyze.AnalyzeError(f"不支持的 AI 配置操作: {action}")
+                self._json({"ok": True, "message": message, "profile_id": profile_id})
+            except analyze.AnalyzeError as e:
+                self._json({"ok": False, "message": str(e)}, 400)
+        elif path == "/api/analysis-prompt":
+            try:
+                action = str(payload.get("action", "save")).strip().lower()
+                if action == "save":
+                    analyze.save_coverage_prompt(str(payload.get("prompt", "")))
+                    message = "覆盖分析提示词已保存"
+                elif action == "reset":
+                    analyze.reset_coverage_prompt()
+                    message = "已恢复项目默认提示词"
+                else:
+                    raise analyze.AnalyzeError(f"不支持的提示词操作: {action}")
+                self._json({"ok": True, "message": message, **_coverage_prompt_payload()})
             except analyze.AnalyzeError as e:
                 self._json({"ok": False, "message": str(e)}, 400)
         else:
@@ -510,6 +630,9 @@ class Handler(BaseHTTPRequestHandler):
 
 def main() -> None:
     url = f"http://{HOST}:{PORT}"
+    if _service_is_running():
+        webbrowser.open(url)
+        return
     try:
         server = ThreadingHTTPServer((HOST, PORT), Handler)
     except OSError:

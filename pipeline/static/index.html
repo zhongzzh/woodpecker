@@ -113,6 +113,8 @@
   .source-option input:checked + span { color:var(--brand-dark); background:#fff; box-shadow:0 2px 9px rgba(28,52,37,.09); }
   .path-row { display:grid; grid-template-columns:minmax(0,1fr) auto; gap:8px; }
   .path-row .btn { height:43px; padding:0 13px; }
+  .path-actions { display:flex; gap:6px; }
+  .path-actions .btn { width:43px; padding:0; justify-content:center; }
   .local-panel { margin-top:2px; padding:1px 13px 14px; border:1px dashed #b9cdc0; border-radius:12px; background:#f8fbf9; }
   .local-panel textarea { min-height:128px; }
   .shortcut { color:#8a968e; font-size:11px; }
@@ -206,11 +208,16 @@
   #report a:hover { text-decoration:underline; }
   dialog { width:min(720px,calc(100vw - 28px)); max-height:calc(100vh - 36px); padding:0; overflow:hidden;
     border:1px solid var(--line); border-radius:20px; color:var(--ink); background:#fff; box-shadow:0 30px 90px rgba(20,39,27,.25); }
+  dialog[open] { display:flex; flex-direction:column; }
   dialog::backdrop { background:rgba(18,30,22,.42); backdrop-filter:blur(4px); }
   .dialog-head { display:flex; align-items:flex-start; justify-content:space-between; gap:20px; padding:23px 25px 18px; border-bottom:1px solid var(--line); }
   .dialog-head h2 { margin:0; font-size:19px; }
   .dialog-head p { margin:6px 0 0; color:var(--muted); font-size:12.5px; line-height:1.55; }
-  .dialog-body { max-height:calc(100vh - 190px); overflow:auto; padding:22px 25px 25px; }
+  .dialog-body { min-height:0; flex:1 1 auto; overflow:auto; padding:22px 25px 25px; }
+  .profile-picker { display:grid; grid-template-columns:minmax(0,1fr) auto auto; gap:8px; }
+  .profile-picker .icon-btn { width:42px; height:42px; border:1px solid var(--line-strong); border-radius:10px; background:#fff; }
+  .profile-picker .icon-btn:hover { background:var(--surface-2); }
+  .profile-name { margin-top:9px; }
   .effective-panel { display:grid; grid-template-columns:.7fr 1.3fr 1fr; gap:10px; margin-bottom:20px; padding:13px; border:1px solid #cfe5d7; border-radius:13px; background:var(--brand-soft); }
   .effective-item { min-width:0; }
   .effective-label { color:#5f7869; font-size:10.5px; font-weight:750; text-transform:uppercase; letter-spacing:.05em; }
@@ -244,6 +251,10 @@
   .ai-test-answer { margin-top:11px; padding:11px 12px; max-height:180px; overflow:auto; white-space:pre-wrap;
     border:1px solid var(--line); border-radius:10px; color:#34423a; background:var(--surface-2); font-size:12px; line-height:1.65; }
   .ai-test-answer.error { color:var(--danger); border-color:#f0cccc; background:var(--danger-soft); }
+  .prompt-editor { min-height:360px; font:12px/1.65 Consolas,"Microsoft YaHei UI",monospace; tab-size:2; }
+  .prompt-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:10px; }
+  .prompt-actions > div { display:flex; gap:8px; }
+  .prompt-count { color:var(--muted); font-size:11px; }
   .dialog-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:15px 25px; border-top:1px solid var(--line); background:#fbfcfb; }
   .footer-actions { display:flex; gap:9px; }
   .toast-region { position:fixed; z-index:100; right:22px; bottom:22px; display:grid; gap:9px; pointer-events:none; }
@@ -279,9 +290,12 @@
     .step-label { font-size:9px; }
     .dialog-body { padding:18px; }
     .dialog-head { padding:20px 18px 16px; }
-    .dialog-footer { align-items:stretch; flex-direction:column-reverse; padding:13px 18px; }
-    .dialog-footer > .btn,.footer-actions,.footer-actions .btn { width:100%; }
+    .dialog-footer { align-items:center; flex-direction:row; padding:10px 18px; }
+    .dialog-footer > .btn { width:auto; padding:0 7px; font-size:11px; }
+    .footer-actions { width:auto; margin-left:auto; }
+    .footer-actions .btn { width:auto; padding:0 11px; }
     .endpoint-row,.model-row,.protocol-switch,.ai-test-row { grid-template-columns:1fr; }
+    .prompt-actions { align-items:flex-start; flex-direction:column; }
     .effective-panel { grid-template-columns:1fr; }
     .toast-region { left:14px; right:14px; bottom:14px; }
     .toast { min-width:0; max-width:none; }
@@ -331,8 +345,8 @@
             <div class="field" id="docMrField"><div class="field-row"><label for="doc_mr">文档 MR<span class="required">*</span></label><span class="hint">仅新增函数需要</span></div><input type="text" id="doc_mr" inputmode="url" autocomplete="off" placeholder="https://git.tongyuan.cc/.../merge_requests/3761"><div class="field-error" id="doc_mrError"></div></div>
           </div>
           <div class="local-panel" id="localFields" hidden>
-            <div class="field"><div class="field-row"><label for="local_code">代码 / 单测<span class="required">*</span></label><span class="hint">可直接粘贴文件或目录路径</span></div><div class="path-row"><input type="text" id="local_code" autocomplete="off" placeholder="C:\path\to\function.jl"><button class="btn btn-secondary" id="selectCode" type="button" title="选择 Julia 文件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg><span>选择</span></button></div><div class="field-error" id="local_codeError"></div></div>
-            <div class="field"><div class="field-row"><label for="local_doc">函数文档<span class="required">*</span></label><span class="hint">Markdown 文件</span></div><div class="path-row"><input type="text" id="local_doc" autocomplete="off" placeholder="C:\path\to\function.md"><button class="btn btn-secondary" id="selectDoc" type="button" title="选择 Markdown 文件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg><span>选择</span></button></div><div class="field-error" id="local_docError"></div></div>
+            <div class="field"><div class="field-row"><label for="local_code">代码 / 单测路径<span class="required">*</span></label><span class="hint">具体 .jl 文件或母目录</span></div><div class="path-row"><input type="text" id="local_code" autocomplete="off" placeholder="C:\path\to\code-or-tests"><div class="path-actions"><button class="btn btn-secondary" id="selectCodeFile" type="button" title="选择 Julia 文件" aria-label="选择 Julia 文件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg></button><button class="btn btn-secondary" id="selectCodeDir" type="button" title="选择代码/单测母目录" aria-label="选择代码/单测母目录"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></button></div></div><div class="field-error" id="local_codeError"></div></div>
+            <div class="field"><div class="field-row"><label for="local_doc">函数文档路径<span class="required">*</span></label><span class="hint">具体 .md 文件或母目录</span></div><div class="path-row"><input type="text" id="local_doc" autocomplete="off" placeholder="C:\path\to\docs"><div class="path-actions"><button class="btn btn-secondary" id="selectDocFile" type="button" title="选择 Markdown 文件" aria-label="选择 Markdown 文件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg></button><button class="btn btn-secondary" id="selectDocDir" type="button" title="选择函数文档母目录" aria-label="选择函数文档母目录"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></button></div></div><div class="field-error" id="local_docError"></div></div>
             <div class="field"><div class="field-row"><label for="perf_report_text">性能报告</label><span class="hint">可选；留空则不分析性能</span></div><textarea id="perf_report_text" autocomplete="off" placeholder="可把性能报告原文粘贴到这里。系统只根据已提供的数据判断，缺失项会明确标注无法判定。"></textarea></div>
           </div>
           <details class="advanced"><summary><span>高级选项</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></summary><div class="advanced-content">
@@ -370,8 +384,9 @@
 </main>
 
 <dialog id="aiDialog" aria-labelledby="aiDialogTitle">
-  <div class="dialog-head"><div><h2 id="aiDialogTitle">AI 模型配置</h2><p>支持 OpenAI 与 Anthropic 两种兼容协议。留空项会自动回退到对应的本机环境变量。</p></div><button class="icon-btn" id="closeAi" type="button" aria-label="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+  <div class="dialog-head"><div><h2 id="aiDialogTitle">AI 分析设置</h2><p>配置模型与覆盖分析提示词。所有 Key 和自定义提示词只保存在本机。</p></div><button class="icon-btn" id="closeAi" type="button" aria-label="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
   <div class="dialog-body">
+    <div class="config-section"><div class="config-title"><h3>公益站配置</h3><span class="source-tag" id="profileState">当前使用</span></div><p class="config-help">选择后立即用于后续分析；新增配置需要保存后才会加入列表。</p><div class="profile-picker"><select id="ai_profile" aria-label="选择公益站配置"><option value="">环境变量默认</option></select><button class="icon-btn" id="newAiProfile" type="button" aria-label="新增公益站配置" title="新增公益站配置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg></button><button class="icon-btn" id="deleteAiProfile" type="button" aria-label="删除当前公益站配置" title="删除当前公益站配置"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6"/></svg></button></div><input class="profile-name" type="text" id="ai_profile_name" autocomplete="off" placeholder="配置名称，例如：公益站 A"></div>
     <div class="effective-panel"><div class="effective-item"><div class="effective-label">当前协议</div><div class="effective-value" id="effectiveProtocol">读取中…</div></div><div class="effective-item"><div class="effective-label">当前端点</div><div class="effective-value" id="effectiveEndpoint">读取中…</div></div><div class="effective-item"><div class="effective-label">当前模型</div><div class="effective-value" id="effectiveModel">读取中…</div></div></div>
     <div class="config-section"><div class="config-title"><h3>接口协议</h3><span class="source-tag" id="protocolSource">默认</span></div><p class="config-help">协议会同时决定鉴权方式和生成内容时使用的 API 路径。</p><div class="protocol-switch">
       <label class="protocol-option"><input type="radio" name="ai_protocol" value="openai"><span class="protocol-mark">OAI</span><span><span class="protocol-name">OpenAI 兼容</span><span class="protocol-path">/v1/chat/completions</span></span></label>
@@ -381,15 +396,16 @@
     <div class="config-section"><div class="config-title"><h3>API Key</h3><span class="source-tag" id="keySource">未配置</span></div><p class="config-help" id="keyHelp">如本机已经设置对应协议的环境变量，这里可以留空。</p><div class="input-shell key-shell"><input type="password" id="ai_key" autocomplete="new-password" placeholder="sk-…"><button class="icon-btn" id="toggleKey" type="button" aria-label="显示密钥"><svg id="eyeIcon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M2 12s3.5-6 10-6 10 6 10 6-3.5 6-10 6S2 12 2 12Z"/><circle cx="12" cy="12" r="3"/></svg></button><button class="icon-btn" id="replaceKey" type="button" aria-label="更换已保存的 API Key" title="更换 API Key" hidden><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L8 18l-4 1 1-4Z"/></svg></button></div><div class="security-note"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10Z"/></svg><span>已保存的 Key 仅显示脱敏掩码和末四位；明文不会从后端返回浏览器。</span></div></div>
     <div class="config-section"><div class="config-title"><h3>模型</h3><span class="source-tag" id="modelSource">默认</span></div><p class="config-help">先验证端点并获取模型列表，再选择用于覆盖分析的模型。</p><div class="model-row"><select id="ai_model"><option value="">正在读取当前模型…</option></select><button class="btn btn-secondary" id="fetchModels" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M20 12a8 8 0 0 0-14.9-4M4 4v4h4m-4 4a8 8 0 0 0 14.9 4M20 20v-4h-4"/></svg><span>获取模型</span></button></div><div class="inline-msg" id="aiMsg">模型列表来自当前填写的端点。</div></div>
     <div class="config-section"><div class="config-title"><h3>自定义试问</h3><span class="source-tag" id="aiTestStatus">未测试</span></div><p class="config-help">使用当前表单中的协议、地址、Key 和模型发起真实请求，不会自动切换到 CLI 兜底。</p><div class="ai-test-row"><textarea id="ai_test_prompt" placeholder="输入一个用于验证模型的问题">鲁迅为什么打周树人？</textarea><button class="btn btn-secondary" id="testAi" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m5 12 14-7-5 14-2.5-5.5Z"/></svg><span>发送试问</span></button></div><div class="ai-test-answer" id="aiTestAnswer" aria-live="polite" hidden></div></div>
+    <div class="config-section"><div class="config-title"><h3>覆盖分析提示词</h3><span class="source-tag" id="promptSource">读取中</span></div><textarea class="prompt-editor" id="coverage_prompt" spellcheck="false" aria-label="覆盖分析提示词"></textarea><div class="prompt-actions"><span class="prompt-count" id="promptCount">0 个字符</span><div><button class="btn btn-ghost" id="resetPrompt" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 12a9 9 0 1 0 3-6.7L3 8"/><path d="M3 3v5h5"/></svg><span>恢复默认</span></button><button class="btn btn-secondary" id="savePrompt" type="button"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 4h13l3 3v13H4Z"/><path d="M8 4v6h8V4M8 20v-6h8v6"/></svg><span>保存提示词</span></button></div></div><div class="inline-msg" id="promptMsg">下一次覆盖分析将使用这里保存的内容。</div></div>
   </div>
-  <div class="dialog-footer"><button class="btn btn-ghost" id="clearAi" type="button">恢复环境变量默认</button><div class="footer-actions"><button class="btn btn-secondary" id="cancelAi" type="button">取消</button><button class="btn btn-primary" id="saveAi" type="button"><span>保存配置</span></button></div></div>
+  <div class="dialog-footer"><button class="btn btn-ghost" id="clearAi" type="button">使用环境变量默认</button><div class="footer-actions"><button class="btn btn-secondary" id="cancelAi" type="button">取消</button><button class="btn btn-primary" id="saveAi" type="button"><span>保存配置</span></button></div></div>
 </dialog>
 
 <div class="toast-region" id="toastRegion" aria-live="polite"></div>
 
 <script>
 const $ = id => document.getElementById(id);
-let currentMd = "", currentDir = "", polling = null, aiConfig = null, lifecycleConnection = null, logFollowMode = true;
+let currentMd = "", currentDir = "", polling = null, aiConfig = null, aiDraftNew = false, aiFormBaseline = "", coveragePromptBaseline = "", lifecycleConnection = null, logFollowMode = true;
 const iconCheck = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m3 8 3 3 7-7"/></svg>';
 
 function esc(s){ return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -441,16 +457,16 @@ function setModelOptions(models,selected){
   if(cur&&models.includes(cur))sel.value=cur;else if(cur&&!models.length){sel.innerHTML=`<option value="${esc(cur)}">${esc(cur)}</option>`;sel.value=cur;}else if(cur&&models.length&&!models.includes(cur)){sel.insertAdjacentHTML("afterbegin",`<option value="${esc(cur)}">${esc(cur)}（当前配置）</option>`);sel.value=cur;}
 }
 function selectedProtocol(){return document.querySelector('input[name="ai_protocol"]:checked')?.value||"anthropic";}
-function savedKeyApplies(protocol=selectedProtocol(),c=aiConfig){return !!(c?.has_saved_key&&(!c.protocol||c.protocol===protocol));}
+function savedKeyApplies(c=aiConfig){return !!(!aiDraftNew&&c?.active_profile_id&&c?.has_saved_key);}
 function activeAiKey(){return $("ai_key").readOnly?"":$("ai_key").value.trim();}
-function configureKeyField(protocol,c=aiConfig){
-  const input=$("ai_key"),stored=savedKeyApplies(protocol,c)&&!!c?.api_key_masked;
+function configureKeyField(c=aiConfig){
+  const input=$("ai_key"),stored=savedKeyApplies(c)&&!!c?.api_key_masked;
   input.value=stored?c.api_key_masked:"";input.readOnly=stored;input.type=stored?"text":"password";
   $("replaceKey").hidden=!stored;$("toggleKey").hidden=stored;$('eyeIcon').style.opacity="1";
 }
 function applyProtocolUi(protocol,c=aiConfig){
   const radio=document.querySelector(`input[name="ai_protocol"][value="${protocol}"]`);if(radio)radio.checked=true;
-  const isOpenAi=protocol==="openai",savedApplies=!c?.protocol||c.protocol===protocol,envBase=c?.env_base_urls?.[protocol]||"",hasEnvKey=c?.has_env_keys?.[protocol]||false,hasSavedKey=savedKeyApplies(protocol,c),hasSavedBase=!!(savedApplies&&c?.base_url),hasSavedModel=!!(savedApplies&&c?.model);
+  const isOpenAi=protocol==="openai",envBase=c?.env_base_urls?.[protocol]||"",hasEnvKey=c?.has_env_keys?.[protocol]||false,hasSavedKey=savedKeyApplies(c),hasSavedBase=!!c?.base_url,hasSavedModel=!!c?.model;
   $("ai_base").placeholder=envBase||(isOpenAi?"https://api.openai.com":"https://api.anthropic.com");
   $("ai_key").placeholder=hasSavedKey?"已保存 Key":hasEnvKey?"已检测到环境变量 Key，留空即用":isOpenAi?"sk-…":"sk-ant-…";
   $("endpointHelp").innerHTML=isOpenAi?'生成请求使用 <code>/v1/chat/completions</code>，模型列表使用 <code>/v1/models</code>。':'生成请求使用 <code>/v1/messages</code>，模型列表使用 <code>/v1/models</code>。';
@@ -460,54 +476,85 @@ function applyProtocolUi(protocol,c=aiConfig){
   $("keySource").textContent=hasSavedKey?"已保存":hasEnvKey?"环境变量":"未配置";$("keySource").className="source-tag"+(hasSavedKey?" custom":"");
   $("modelSource").textContent=hasSavedModel?"自定义配置":"项目默认";$("modelSource").className="source-tag"+(hasSavedModel?" custom":"");
 }
+function populateAiProfiles(c){
+  $("ai_profile").innerHTML='<option value="">环境变量默认</option>'+(c.profiles||[]).map(p=>`<option value="${esc(p.id)}">${esc(p.name)} · ${p.protocol==="openai"?"OpenAI":"Anthropic"}</option>`).join("");
+  $("ai_profile").value=c.active_profile_id||"";
+}
 function updateAiSummary(c){
   aiConfig=c;const protocol=c.protocol||c.effective_protocol||c.default_protocol||"anthropic",protocolName=protocol==="openai"?"OpenAI":"Anthropic",envBase=c.env_base_urls?.[protocol]||c.env_base_url||"",hasEnvKey=c.has_env_keys?.[protocol]??c.has_env_key,effectiveBase=c.base_url||envBase||`${protocolName} SDK 默认端点`,effectiveModel=c.model||c.default_models?.[protocol]||c.default_model||"未设置";
-  $("aiHeaderText").textContent=`${protocolName} · ${effectiveModel}`;$("effectiveProtocol").textContent=protocolName+" 兼容";$("effectiveEndpoint").textContent=effectiveBase;$("effectiveEndpoint").title=effectiveBase;$("effectiveModel").textContent=effectiveModel;
+  $("aiHeaderText").textContent=`${c.active_profile_id?c.name+" · ":""}${protocolName} · ${effectiveModel}`;$("effectiveProtocol").textContent=protocolName+" 兼容";$("effectiveEndpoint").textContent=effectiveBase;$("effectiveEndpoint").title=effectiveBase;$("effectiveModel").textContent=effectiveModel;
   $("protocolSource").textContent=c.protocol?"自定义配置":"项目默认";$("protocolSource").className="source-tag"+(c.protocol?" custom":"");
   $("endpointSource").textContent=c.base_url?"自定义配置":envBase?"环境变量":"SDK 默认";$("endpointSource").className="source-tag"+(c.base_url?" custom":"");
   $("keySource").textContent=c.has_saved_key?"已保存":hasEnvKey?"环境变量":"未配置";$("keySource").className="source-tag"+(c.has_saved_key?" custom":"");
   $("modelSource").textContent=c.model?"自定义配置":"项目默认";$("modelSource").className="source-tag"+(c.model?" custom":"");
 }
+function aiFormState(){return JSON.stringify({profile:aiDraftNew?"__new__":aiConfig?.active_profile_id||"",name:$("ai_profile_name").value,protocol:selectedProtocol(),base:$("ai_base").value,key:$("ai_key").readOnly?"__saved__":$("ai_key").value,model:$("ai_model").value});}
+function aiFormDirty(){return !!aiFormBaseline&&aiFormState()!==aiFormBaseline;}
+function confirmAiDiscard(){return !aiFormDirty()||confirm("当前公益站配置尚未保存，确定放弃这些修改吗？");}
+function coveragePromptDirty(){return !!coveragePromptBaseline&&$("coverage_prompt").value!==coveragePromptBaseline;}
+function confirmDialogDiscard(){return !(aiFormDirty()||coveragePromptDirty())||confirm("当前设置中有尚未保存的修改，确定放弃吗？");}
 function restoreAiForm(){
-  if(!aiConfig)return;const c=aiConfig,protocol=c.protocol||c.effective_protocol||c.default_protocol||"anthropic";$("ai_base").value=c.base_url||"";applyProtocolUi(protocol,c);configureKeyField(protocol,c);setModelOptions([],c.model||c.default_models?.[protocol]||c.default_model||"");setAiMsg("模型列表来自当前填写的端点。");resetAiTest();
+  if(!aiConfig)return;const c=aiConfig,protocol=c.protocol||c.effective_protocol||c.default_protocol||"anthropic";aiDraftNew=false;populateAiProfiles(c);$("ai_profile_name").value=c.active_profile_id?c.name:"";$("ai_profile_name").disabled=!c.active_profile_id;$("deleteAiProfile").disabled=!c.active_profile_id;$("saveAi").disabled=!c.active_profile_id;$("profileState").textContent=c.active_profile_id?"当前使用":"环境变量";$("profileState").className="source-tag"+(c.active_profile_id?" custom":"");$("ai_base").value=c.base_url||"";applyProtocolUi(protocol,c);configureKeyField(c);setModelOptions([],c.model||c.default_models?.[protocol]||c.default_model||"");setAiMsg("模型列表来自当前填写的端点。");resetAiTest();aiFormBaseline=aiFormState();
 }
 async function loadAiConfig(){
   try{const {data:c}=await api("/api/ai-config");updateAiSummary(c);restoreAiForm();}
   catch(e){$("aiHeaderText").textContent="AI 配置读取失败";toast(e.message,"error");}
 }
+function updatePromptUi(data){
+  $("coverage_prompt").value=data.prompt||"";coveragePromptBaseline=$("coverage_prompt").value;$("promptSource").textContent=data.customized?"自定义":"项目默认";$("promptSource").className="source-tag"+(data.customized?" custom":"");$("resetPrompt").disabled=!data.customized;$("promptCount").textContent=`${$("coverage_prompt").value.length} 个字符`;$("promptMsg").textContent="下一次覆盖分析将使用这里保存的内容。";$("promptMsg").className="inline-msg";
+}
+async function loadCoveragePrompt(){
+  try{const {data}=await api("/api/analysis-prompt");if(data.error)throw new Error(data.error);updatePromptUi(data);}
+  catch(e){$("promptSource").textContent="读取失败";$("promptMsg").textContent=e.message;$("promptMsg").className="inline-msg error";toast("提示词读取失败："+e.message,"error");}
+}
 function setAiMsg(text,type=""){$("aiMsg").textContent=text;$("aiMsg").className="inline-msg "+type;}
 function resetAiTest(){$("aiTestStatus").textContent="未测试";$("aiTestStatus").className="source-tag";$("aiTestAnswer").hidden=true;$("aiTestAnswer").textContent="";$("aiTestAnswer").className="ai-test-answer";}
 function showAiTest(text,type="success"){$("aiTestStatus").textContent=type==="error"?"失败":"可用";$("aiTestStatus").className="source-tag"+(type==="success"?" custom":"");$("aiTestAnswer").textContent=text;$("aiTestAnswer").className="ai-test-answer"+(type==="error"?" error":"");$("aiTestAnswer").hidden=false;}
-$("openAi").onclick=async()=>{await loadAiConfig();$("aiDialog").showModal();};
-$("closeAi").onclick=$("cancelAi").onclick=()=>{restoreAiForm();$("aiDialog").close();};
-$("aiDialog").addEventListener("cancel",restoreAiForm);
-$("aiDialog").addEventListener("click",e=>{if(e.target===$("aiDialog")){restoreAiForm();$("aiDialog").close();}});
-document.querySelectorAll('input[name="ai_protocol"]').forEach(input=>input.addEventListener("change",()=>{const applies=!aiConfig?.protocol||aiConfig.protocol===input.value;$("ai_base").value=applies?(aiConfig?.base_url||""):"";applyProtocolUi(input.value);configureKeyField(input.value);setModelOptions([],applies?(aiConfig?.model||aiConfig?.default_models?.[input.value]||""):(aiConfig?.default_models?.[input.value]||""));setAiMsg(`已切换为 ${input.value==="openai"?"OpenAI":"Anthropic"} 兼容协议，请重新获取模型。`);resetAiTest();}));
+$("openAi").onclick=async()=>{await Promise.all([loadAiConfig(),loadCoveragePrompt()]);$("aiDialog").showModal();};
+function closeAiDialog(){if(!confirmDialogDiscard())return;$("aiDialog").close();}
+$("closeAi").onclick=$("cancelAi").onclick=closeAiDialog;
+$("aiDialog").addEventListener("cancel",e=>{if(!confirmDialogDiscard())e.preventDefault();});
+$("aiDialog").addEventListener("click",e=>{if(e.target===$("aiDialog"))closeAiDialog();});
+$("ai_profile").addEventListener("change",async e=>{const target=e.target.value,previous=aiDraftNew?"__new__":aiConfig?.active_profile_id||"";if(!confirmAiDiscard()){e.target.value=previous;return;}try{const action=target?"activate":"use_default",{data}=await api("/api/ai-config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,profile_id:target})});if(!data.ok)throw new Error(data.message);await loadAiConfig();toast(target?"已切换公益站配置":"已改用环境变量默认配置");}catch(err){e.target.value=previous;toast(err.message,"error");}});
+$("newAiProfile").onclick=()=>{if(!confirmAiDiscard())return;aiDraftNew=true;populateAiProfiles(aiConfig);$("ai_profile").insertAdjacentHTML("beforeend",'<option value="__new__">新公益站配置</option>');$("ai_profile").value="__new__";$("ai_profile_name").disabled=false;$("ai_profile_name").value="";$("deleteAiProfile").disabled=true;$("saveAi").disabled=false;$("profileState").textContent="尚未保存";$("profileState").className="source-tag";const protocol=aiConfig.default_protocol||"anthropic";$("ai_base").value="";applyProtocolUi(protocol,{...aiConfig,protocol:"",base_url:"",model:"",has_saved_key:false});configureKeyField({has_saved_key:false});setModelOptions([],aiConfig.default_models?.[protocol]||"");setAiMsg("填写名称、端点、Key 和模型后保存。","");resetAiTest();aiFormBaseline=aiFormState();$("ai_profile_name").focus();};
+$("deleteAiProfile").onclick=async()=>{const id=aiConfig?.active_profile_id;if(!id)return;if(!confirm(`确定删除“${aiConfig.name}”吗？此操作会删除该公益站保存的 Key。`))return;try{const {data}=await api("/api/ai-config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"delete",profile_id:id})});if(!data.ok)throw new Error(data.message);await loadAiConfig();toast("公益站配置已删除");}catch(e){toast(e.message,"error");}};
+document.querySelectorAll('input[name="ai_protocol"]').forEach(input=>input.addEventListener("change",()=>{applyProtocolUi(input.value);setAiMsg(`已切换为 ${input.value==="openai"?"OpenAI":"Anthropic"} 兼容协议，请重新获取模型。`);resetAiTest();}));
 $("officialEndpoint").onclick=()=>{const protocol=selectedProtocol(),isOpenAi=protocol==="openai";$("ai_base").value=isOpenAi?"https://api.openai.com":"https://api.anthropic.com";$("ai_base").focus();setAiMsg(`已填入 ${isOpenAi?"OpenAI":"Anthropic"} 官方端点，获取模型前请确认 Key 可用。`);resetAiTest();};
 $("toggleKey").onclick=()=>{const input=$("ai_key"),show=input.type==="password";input.type=show?"text":"password";$("toggleKey").setAttribute("aria-label",show?"隐藏密钥":"显示密钥");$("eyeIcon").style.opacity=show?".55":"1";};
 $("replaceKey").onclick=()=>{const input=$("ai_key");input.readOnly=false;input.type="password";input.value="";input.placeholder="输入新的 API Key";$("replaceKey").hidden=true;$("toggleKey").hidden=false;input.focus();resetAiTest();};
 $("fetchModels").onclick=async()=>{
   const btn=$("fetchModels");setButtonBusy(btn,true,"正在连接");setAiMsg("正在验证端点并读取模型列表…");
-  try{const protocol=selectedProtocol(),{data}=await api("/api/ai-models",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({protocol,base_url:$("ai_base").value.trim(),api_key:activeAiKey()})});if(!data.ok)throw new Error(data.message);setModelOptions(data.models,$("ai_model").value);setAiMsg(`连接成功，共获取 ${data.models.length} 个模型。`,"success");toast("端点连接成功");resetAiTest();}
+  try{const protocol=selectedProtocol(),{data}=await api("/api/ai-models",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({protocol,base_url:$("ai_base").value.trim(),api_key:activeAiKey(),profile_id:aiDraftNew?"":aiConfig.active_profile_id})});if(!data.ok)throw new Error(data.message);setModelOptions(data.models,$("ai_model").value);setAiMsg(`连接成功，共获取 ${data.models.length} 个模型。`,"success");toast("端点连接成功");resetAiTest();}
   catch(e){setAiMsg(e.message,"error");toast(e.message,"error");}finally{setButtonBusy(btn,false);}
 };
 $("saveAi").onclick=async()=>{
-  const btn=$("saveAi");setButtonBusy(btn,true,"保存中");
-  try{const protocol=selectedProtocol(),key=activeAiKey(),{data}=await api("/api/ai-config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({protocol,base_url:$("ai_base").value.trim(),api_key:key,keep_api_key:!key&&savedKeyApplies(protocol),model:$("ai_model").value})});if(!data.ok)throw new Error(data.message||"保存失败");await loadAiConfig();$("aiDialog").close();toast("AI 配置已保存，后续分析将使用新配置");}
+  const name=$("ai_profile_name").value.trim(),btn=$("saveAi");if(!name){setAiMsg("请填写公益站配置名称。","error");$("ai_profile_name").focus();return;}setButtonBusy(btn,true,"保存中");
+  try{const key=activeAiKey(),{data}=await api("/api/ai-config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"save",profile_id:aiDraftNew?"":aiConfig.active_profile_id,name,protocol:selectedProtocol(),base_url:$("ai_base").value.trim(),api_key:key,keep_api_key:!key&&savedKeyApplies(),model:$("ai_model").value})});if(!data.ok)throw new Error(data.message||"保存失败");await loadAiConfig();if(!coveragePromptDirty())$("aiDialog").close();toast("公益站配置已保存并启用");}
   catch(e){setAiMsg(e.message,"error");toast(e.message,"error");}finally{setButtonBusy(btn,false);}
 };
 $("testAi").onclick=async()=>{
   const question=$("ai_test_prompt").value.trim(),btn=$("testAi");if(!question){showAiTest("请先输入一个测试问题。","error");$("ai_test_prompt").focus();return;}
   setButtonBusy(btn,true,"请求中");$("aiTestStatus").textContent="测试中";$("aiTestAnswer").hidden=true;
-  try{const {data}=await api("/api/ai-test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({question,protocol:selectedProtocol(),base_url:$("ai_base").value.trim(),api_key:activeAiKey(),model:$("ai_model").value})});if(!data.ok)throw new Error(data.message);showAiTest(data.answer,"success");toast("AI 试问成功");}
+  try{const {data}=await api("/api/ai-test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({question,protocol:selectedProtocol(),base_url:$("ai_base").value.trim(),api_key:activeAiKey(),model:$("ai_model").value,profile_id:aiDraftNew?"":aiConfig.active_profile_id})});if(!data.ok)throw new Error(data.message);showAiTest(data.answer,"success");toast("AI 试问成功");}
   catch(e){showAiTest(e.message,"error");toast(e.message,"error");}finally{setButtonBusy(btn,false);}
 };
 $("ai_test_prompt").addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){$("testAi").click();}});
-["ai_base","ai_key","ai_model"].forEach(id=>$(id).addEventListener("input",resetAiTest));
+$("coverage_prompt").addEventListener("input",()=>{$("promptCount").textContent=`${$("coverage_prompt").value.length} 个字符`;$("promptMsg").textContent=coveragePromptDirty()?"提示词有尚未保存的修改。":"下一次覆盖分析将使用这里保存的内容。";$("promptMsg").className="inline-msg";});
+$("savePrompt").onclick=async()=>{
+  const prompt=$("coverage_prompt").value.trim(),btn=$("savePrompt");if(!prompt){$("promptMsg").textContent="提示词不能为空。";$("promptMsg").className="inline-msg error";$("coverage_prompt").focus();return;}setButtonBusy(btn,true,"保存中");
+  try{const {data}=await api("/api/analysis-prompt",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"save",prompt})});if(!data.ok)throw new Error(data.message||"保存失败");updatePromptUi(data);$("promptMsg").textContent=data.message;$("promptMsg").className="inline-msg success";toast(data.message);}
+  catch(e){$("promptMsg").textContent=e.message;$("promptMsg").className="inline-msg error";toast(e.message,"error");}finally{setButtonBusy(btn,false);}
+};
+$("resetPrompt").onclick=async()=>{
+  if(!confirm("确定恢复项目默认覆盖分析提示词吗？当前自定义内容将被删除。"))return;const btn=$("resetPrompt");setButtonBusy(btn,true,"恢复中");
+  try{const {data}=await api("/api/analysis-prompt",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"reset"})});if(!data.ok)throw new Error(data.message||"恢复失败");updatePromptUi(data);$("promptMsg").textContent=data.message;$("promptMsg").className="inline-msg success";toast(data.message);}
+  catch(e){$("promptMsg").textContent=e.message;$("promptMsg").className="inline-msg error";toast(e.message,"error");}finally{setButtonBusy(btn,false);}
+};
+["ai_base","ai_key","ai_model","ai_profile_name"].forEach(id=>$(id).addEventListener("input",resetAiTest));
 $("clearAi").onclick=async()=>{
-  if(!confirm("恢复默认后，将清除项目中保存的 API 地址、Key 和模型，改用环境变量与项目默认值。确定继续吗？"))return;
+  if(!confirmAiDiscard())return;
   const btn=$("clearAi");setButtonBusy(btn,true,"清除中");
-  try{await api("/api/ai-config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({protocol:"",base_url:"",api_key:"",model:""})});await loadAiConfig();setAiMsg("已恢复环境变量与项目默认配置。","success");toast("已恢复默认 AI 配置");}
+  try{const {data}=await api("/api/ai-config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"use_default"})});if(!data.ok)throw new Error(data.message);await loadAiConfig();setAiMsg("正在使用环境变量与项目默认配置；已保存公益站未被删除。","success");toast("已改用环境变量默认配置");}
   catch(e){toast(e.message,"error");}finally{setButtonBusy(btn,false);}
 };
 
@@ -556,13 +603,13 @@ function syncTaskTypeUi(){
   const local=inputMode()==="local",perf=isPerformanceOptimization();
   $("remotePaste").hidden=local;$("remoteFields").hidden=local;$("localFields").hidden=!local;
   $("docMrField").hidden=perf;$("codeBranchField").hidden=local;$("docBranchField").hidden=local||perf;
-  $("requiredCount").textContent=local?"本地分析需任务名、代码/单测和文档":perf?"性能优化只需任务名和代码 MR":"新增函数需要三个必填项";
-  $("nameHint").textContent=local?"函数名也可从文档文件名推导":"完整周提测标题可直接粘贴";
+  $("requiredCount").textContent=local?"本地分析需任务名、代码路径和文档路径":perf?"性能优化只需任务名和代码 MR":"新增函数需要三个必填项";
+  $("nameHint").textContent=local?"例如：chromadapt函数":"完整周提测标题可直接粘贴";
   const inactive=local?["code_mr","doc_mr"]:["local_code","local_doc"];
   inactive.forEach(id=>{$(id).classList.remove("invalid");$(id+"Error").textContent="";});
   if(perf){$("doc_mr").classList.remove("invalid");$("doc_mrError").textContent="";}
 }
-function validateForm(){let ok=true;const fields=[{id:"name",msg:"请输入任务名称"}];if(inputMode()==="local")fields.push({id:"local_code",msg:"请选择代码/单测文件或填写目录路径"},{id:"local_doc",msg:"请选择函数文档文件"});else{fields.push({id:"code_mr",msg:"请输入代码 MR 链接",url:true});if(!isPerformanceOptimization())fields.push({id:"doc_mr",msg:"新增函数任务请输入文档 MR 链接",url:true});}for(const f of fields){const el=$(f.id),value=el.value.trim();let error=!value?f.msg:"";if(!error&&f.url&&!/^https?:\/\//i.test(value))error="请输入完整的 http(s) 链接";el.classList.toggle("invalid",!!error);$(f.id+"Error").textContent=error;if(error)ok=false;}const first=document.querySelector("input.invalid,textarea.invalid");if(first)first.focus();return ok;}
+function validateForm(){let ok=true;const fields=[{id:"name",msg:"请输入任务名称"}];if(inputMode()==="local")fields.push({id:"local_code",msg:"请选择或填写代码/单测文件或母目录"},{id:"local_doc",msg:"请选择或填写文档文件或母目录"});else{fields.push({id:"code_mr",msg:"请输入代码 MR 链接",url:true});if(!isPerformanceOptimization())fields.push({id:"doc_mr",msg:"新增函数任务请输入文档 MR 链接",url:true});}for(const f of fields){const el=$(f.id),value=el.value.trim();let error=!value?f.msg:"";if(!error&&f.url&&!/^https?:\/\//i.test(value))error="请输入完整的 http(s) 链接";el.classList.toggle("invalid",!!error);$(f.id+"Error").textContent=error;if(error)ok=false;}const first=document.querySelector("input.invalid,textarea.invalid");if(first)first.focus();return ok;}
 ["name","code_mr","doc_mr","local_code","local_doc"].forEach(id=>$(id).addEventListener("input",()=>{$(id).classList.remove("invalid");$(id+"Error").textContent="";if(id==="name")syncTaskTypeUi();}));
 document.querySelectorAll('input[name="input_mode"]').forEach(el=>el.addEventListener("change",syncTaskTypeUi));
 async function selectLocalFile(kind,target,button){
@@ -570,12 +617,14 @@ async function selectLocalFile(kind,target,button){
   try{const {data}=await api("/api/select-local",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind})});if(!data.ok)throw new Error(data.message);if(data.path){$(target).value=data.path;$(target).classList.remove("invalid");$(target+"Error").textContent="";}}
   catch(e){toast(e.message,"error");}finally{setButtonBusy(button,false);}
 }
-$("selectCode").onclick=()=>selectLocalFile("code","local_code",$("selectCode"));
-$("selectDoc").onclick=()=>selectLocalFile("doc","local_doc",$("selectDoc"));
+$("selectCodeFile").onclick=()=>selectLocalFile("code","local_code",$("selectCodeFile"));
+$("selectCodeDir").onclick=()=>selectLocalFile("code_dir","local_code",$("selectCodeDir"));
+$("selectDocFile").onclick=()=>selectLocalFile("doc","local_doc",$("selectDocFile"));
+$("selectDocDir").onclick=()=>selectLocalFile("doc_dir","local_doc",$("selectDocDir"));
 $("taskForm").onsubmit=async e=>{
   e.preventDefault();if(!validateForm())return;const local=inputMode()==="local",perf=isPerformanceOptimization(),btn=$("go"),payload={input_mode:local?"local":"remote",name:$("name").value.trim(),code_mr:local?"":$("code_mr").value.trim(),doc_mr:local||perf?"":$("doc_mr").value.trim(),local_code:local?$("local_code").value.trim():"",local_doc:local?$("local_doc").value.trim():"",perf_report_text:local?$("perf_report_text").value.trim():"",func:$("func").value.trim(),no_ai:$("no_ai").checked,code_branch:local?"":$("code_branch").value.trim(),doc_branch:local||perf?"":$("doc_branch").value.trim()};
   setButtonBusy(btn,true,"正在启动");updateSteps(1);setStatus("running","准备中","正在创建任务并启动分析流程…");updateLog([],true);
-  try{const {data}=await api("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});if(!data.ok)throw new Error(data.message);btn.innerHTML=btn.dataset.html;btn.classList.remove("loading");btn.disabled=true;if(!polling)polling=setInterval(poll,1000);poll();}
+  try{const {data}=await api("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});if(!data.ok)throw new Error(data.message);if(local&&data.resolved_paths){const paths=data.resolved_paths;$("local_code").value=paths.local_code||$("local_code").value;$("local_doc").value=paths.local_doc||$("local_doc").value;const extraCode=Math.max(0,(paths.local_code_files||[]).length-1),extraDocs=Math.max(0,(paths.local_doc_files||[]).length-1),extras=[extraCode?`另有 ${extraCode} 个相关代码文件`:"",extraDocs?`另有 ${extraDocs} 个相关文档`:""].filter(Boolean).join("，");toast(`已回填准确材料路径${extras?`；${extras}也会用于本次分析`:""}`);}btn.innerHTML=btn.dataset.html;btn.classList.remove("loading");btn.disabled=true;if(!polling)polling=setInterval(poll,1000);poll();}
   catch(e){setButtonBusy(btn,false);updateSteps(0);setStatus("error","启动失败",e.message);toast(e.message,"error");}
 };
 document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"&&!$("aiDialog").open)$("taskForm").requestSubmit();});

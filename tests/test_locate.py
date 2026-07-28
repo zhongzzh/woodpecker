@@ -59,6 +59,55 @@ class LocalMaterialLocateTests(unittest.TestCase):
 
         self.assertEqual(result["main"], test_file)
 
+    def test_directory_mode_collects_all_names_containing_function(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            test_file = root / "code" / "test" / "test_chromadapt.jl"
+            source_file = root / "code" / "src" / "chromadapt_impl.jl"
+            unrelated = root / "code" / "test" / "test_adapt.jl"
+            for path in (test_file, source_file, unrelated):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("# material", encoding="utf-8")
+
+            result = locate.find_local_unit_test(
+                str(root), "chromadapt", log=lambda _message: None
+            )
+
+        self.assertEqual(result["main"], test_file)
+        self.assertEqual(result["companions"], [source_file])
+
+    def test_directory_mode_finds_all_matching_docs_with_exact_name_first(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            exact = root / "docs" / "chromadapt.md"
+            extra = root / "notes" / "chromadapt_examples.md"
+            unrelated = root / "docs" / "adapt.md"
+            for path in (exact, extra, unrelated):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("# doc", encoding="utf-8")
+
+            result = locate.find_local_docs(
+                str(root), "chromadapt", log=lambda _message: None
+            )
+
+        self.assertEqual(result, [exact, extra])
+
+    def test_directory_mode_reports_missing_function_material(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            with self.assertRaisesRegex(locate.LocateError, "完整函数名 'chromadapt'"):
+                locate.find_local_unit_test(
+                    tmp, "chromadapt", log=lambda _message: None
+                )
+
+    def test_directory_mode_reports_missing_function_doc(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            code = Path(tmp) / "test_chromadapt.jl"
+            code.write_text("@test true", encoding="utf-8")
+            with self.assertRaisesRegex(
+                locate.LocateError, "完整函数名 'chromadapt'.*\\.md"
+            ):
+                locate.find_local_docs(tmp, "chromadapt", log=lambda _message: None)
+
 
 if __name__ == "__main__":
     unittest.main()

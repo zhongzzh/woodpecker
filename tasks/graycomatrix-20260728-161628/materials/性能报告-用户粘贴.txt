@@ -1,0 +1,28 @@
+graycomatrix	using TyImageProcessing
+using BenchmarkTools
+
+I = [1.0 1 5 6 8 8; 2 3 5 7 0 2; 0 2 3 5 6 7]
+
+first_run_time = @elapsed begin
+   glcm, SI = graycomatrix(I; NumLevels=9, GrayLimits=Float64[])
+end
+
+second_run_time = @belapsed begin
+   glcm, SI = graycomatrix(I; NumLevels=9, GrayLimits=Float64[])
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+I = [ 1 1 5 6 8 8; 2 3 5 7 0 2; 0 2 3 5 6 7]
+
+tic;
+[glcm,SI] = graycomatrix(I,'NumLevels',9,'GrayLimits',[])
+first_run_time = toc;
+
+tic;
+[glcm,SI] = graycomatrix(I,'NumLevels',9,'GrayLimits',[])
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)	3.4506785	2.82E-05	0.114132	0.006451	30.234102	0.004371

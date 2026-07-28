@@ -1,0 +1,32 @@
+{
+  "name": "graycomatrix函数",
+  "func": "graycomatrix",
+  "task_type": "local_analysis",
+  "input_mode": "local",
+  "code_mr": null,
+  "doc_mr": null,
+  "local_code": "C:\\Users\\TR\\Desktop\\doc\\TyImageProcessing.jl\\test\\im_math\\test_graycomatrix.jl",
+  "local_doc": "C:\\Users\\TR\\Desktop\\doc\\syslab-docs-2.0\\syslabHelpSourceCode\\projects\\TyImageProcessing\\Doc\\TyImageProcessing\\ImageSegmentationandAnalysis\\TextureAnalysis\\graycomatrix.md",
+  "local_code_input": "C:\\Users\\TR\\Desktop\\doc\\TyImageProcessing.jl\\test\\im_math\\test_graycomatrix.jl",
+  "local_doc_input": "C:\\Users\\TR\\Desktop\\doc\\syslab-docs-2.0\\syslabHelpSourceCode\\projects\\TyImageProcessing\\Doc\\TyImageProcessing\\ImageSegmentationandAnalysis\\TextureAnalysis\\graycomatrix.md",
+  "local_code_files": [
+    "C:\\Users\\TR\\Desktop\\doc\\TyImageProcessing.jl\\test\\im_math\\test_graycomatrix.jl"
+  ],
+  "local_doc_files": [
+    "C:\\Users\\TR\\Desktop\\doc\\syslab-docs-2.0\\syslabHelpSourceCode\\projects\\TyImageProcessing\\Doc\\TyImageProcessing\\ImageSegmentationandAnalysis\\TextureAnalysis\\graycomatrix.md"
+  ],
+  "code_branch": "本地文件",
+  "doc_branch": "本地文件",
+  "doc_md": "graycomatrix.md",
+  "unit_test": "test_graycomatrix.jl",
+  "benchmark": null,
+  "perf_note_heading": null,
+  "pasted_performance_report": true,
+  "coverage_ai_status": "failed",
+  "coverage_ai_error": "openai 当前配置连续 3 次调用失败：OpenAI 请求失败（HTTP 403）：<html>  <head><title>403 Forbidden</title></head>  <body>  <center><h1>403 Forbidden</h1></center>  <hr><center>nginx/1.22.1</center>  </body>  </html>",
+  "performance_ai_status": "failed",
+  "performance_ai_error": "openai 当前配置连续 3 次调用失败：OpenAI 请求失败（HTTP 403）：<html>  <head><title>403 Forbidden</title></head>  <body>  <center><h1>403 Forbidden</h1></center>  <hr><center>nginx/1.22.1</center>  </body>  </html>",
+  "performance_verdict": "性能测试 AI 分析失败（原始报告已保留）",
+  "model": "gpt-5.6-sol",
+  "generated_at": "2026-07-28T16:13:22"
+}

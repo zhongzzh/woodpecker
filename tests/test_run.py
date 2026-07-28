@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from pipeline import config
+from pipeline import analyze, config
 from pipeline.run import run
 from pipeline.taskcard import TaskCard
 
@@ -68,6 +68,38 @@ class PerformanceOptimizationPipelineTests(unittest.TestCase):
 
 
 class LocalMaterialPipelineTests(unittest.TestCase):
+    def test_local_pipeline_resolves_separate_parent_directories(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tasks_dir = root / "tasks"
+            test_file = root / "code" / "test" / "test_chromadapt.jl"
+            source_file = root / "code" / "src" / "chromadapt_impl.jl"
+            doc_file = root / "docs" / "chromadapt.md"
+            for path, content in (
+                (test_file, "@test true"),
+                (source_file, "chromadapt() = true"),
+                (doc_file, "# chromadapt"),
+            ):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+            card = TaskCard(
+                name="chromadapt函数", input_mode="local",
+                local_code=str(root / "code"), local_doc=str(root / "docs"),
+            )
+
+            with patch.object(config, "TASKS_DIR", tasks_dir):
+                report_path = run(card, skip_ai=True, log=lambda _message: None)
+
+            task = json.loads((report_path.parent / "task.json").read_text(encoding="utf-8"))
+            self.assertEqual(task["local_code_input"], str(root / "code"))
+            self.assertEqual(task["local_doc_input"], str(root / "docs"))
+            self.assertEqual(task["local_code"], str(test_file))
+            self.assertEqual(task["local_doc"], str(doc_file))
+            self.assertEqual(task["local_code_files"], [str(test_file), str(source_file)])
+            self.assertEqual(task["local_doc_files"], [str(doc_file)])
+            self.assertTrue((report_path.parent / "materials" / test_file.name).exists())
+            self.assertTrue((report_path.parent / "materials" / source_file.name).exists())
+
     def test_local_pipeline_skips_git_and_optional_performance(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -120,7 +152,10 @@ class LocalMaterialPipelineTests(unittest.TestCase):
                 patch("pipeline.run.analyze.coverage_analysis", return_value="覆盖分析完成"),
                 patch(
                     "pipeline.run.analyze.pasted_performance_analysis",
-                    return_value="### 用户粘贴的性能报告分析\n\n无法完整判定",
+                    return_value=(
+                        "### 用户粘贴的性能报告分析\n\n"
+                        "**性能结论：性能首次不通过，二次通过**"
+                    ),
                 ) as perf_analysis,
             ):
                 report_path = run(
@@ -129,10 +164,91 @@ class LocalMaterialPipelineTests(unittest.TestCase):
 
             report = report_path.read_text(encoding="utf-8")
             perf_analysis.assert_called_once()
-            self.assertIn("已分析用户粘贴的性能报告信息", report)
+            self.assertIn(
+                "功能验证通过，性能首次不通过，二次通过，请补充自动化脚本",
+                report,
+            )
+            self.assertIn("## 二、性能测试判定（AI，仅当前函数）", report)
+            task = json.loads(
+                (report_path.parent / "task.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(
+                task["performance_verdict"], "性能首次不通过，二次通过"
+            )
             self.assertTrue(
                 (report_path.parent / "materials" / "性能报告-用户粘贴.txt").exists()
             )
+
+    def test_performance_ai_failure_keeps_completed_coverage_and_writes_report(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            unit_file = root / "sample.jl"
+            doc_file = root / "sample.md"
+            unit_file.write_text("@test true", encoding="utf-8")
+            doc_file.write_text("# sample", encoding="utf-8")
+            card = TaskCard(
+                name="检查本地材料", input_mode="local",
+                local_code=str(unit_file), local_doc=str(doc_file),
+            )
+
+            with (
+                patch.object(config, "TASKS_DIR", root / "tasks"),
+                patch(
+                    "pipeline.run.analyze.coverage_analysis",
+                    return_value="覆盖分析已经完成",
+                ),
+                patch(
+                    "pipeline.run.analyze.pasted_performance_analysis",
+                    side_effect=analyze.AnalyzeError(
+                        "openai 当前配置连续 3 次调用失败：remote closed"
+                    ),
+                ),
+            ):
+                report_path = run(
+                    card, perf_report_text="性能报告原文", log=lambda _message: None
+                )
+
+            report = report_path.read_text(encoding="utf-8")
+            task = json.loads((report_path.parent / "task.json").read_text(encoding="utf-8"))
+            self.assertIn("覆盖分析已经完成", report)
+            self.assertIn("性能测试 AI 分析失败", report)
+            self.assertIn("原始报告已保留", report)
+            self.assertEqual(task["coverage_ai_status"], "completed")
+            self.assertEqual(task["performance_ai_status"], "failed")
+            self.assertTrue(
+                (report_path.parent / "materials" / "性能报告-用户粘贴.txt").exists()
+            )
+
+    def test_coverage_ai_failure_is_marked_and_report_is_still_written(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            unit_file = root / "sample.jl"
+            doc_file = root / "sample.md"
+            unit_file.write_text("@test true", encoding="utf-8")
+            doc_file.write_text("# sample", encoding="utf-8")
+            card = TaskCard(
+                name="检查本地材料", input_mode="local",
+                local_code=str(unit_file), local_doc=str(doc_file),
+            )
+
+            with (
+                patch.object(config, "TASKS_DIR", root / "tasks"),
+                patch(
+                    "pipeline.run.analyze.coverage_analysis",
+                    side_effect=analyze.AnalyzeError(
+                        "openai 当前配置连续 3 次调用失败：remote closed"
+                    ),
+                ),
+                patch("pipeline.run.analyze.current_model", return_value="grok-4.5"),
+            ):
+                report_path = run(card, log=lambda _message: None)
+
+            report = report_path.read_text(encoding="utf-8")
+            task = json.loads((report_path.parent / "task.json").read_text(encoding="utf-8"))
+            self.assertIn("AI 覆盖分析失败", report)
+            self.assertIn("功能验证未进行", report)
+            self.assertEqual(task["coverage_ai_status"], "failed")
+            self.assertEqual(task["performance_ai_status"], "not_requested")
 
     def test_no_ai_saves_pasted_performance_without_claiming_analysis(self):
         with tempfile.TemporaryDirectory() as tmp:

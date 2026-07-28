@@ -31,8 +31,10 @@ TASKS_DIR = PROJECT_ROOT / "tasks"
 PW_STATE_FILE = PROJECT_ROOT / ".pw-state.json"
 GITLAB_CONFIG_FILE = PROJECT_ROOT / ".gitlab-config.json"
 
-# 覆盖分析提示词（v1 基线，docs/prompts）
-PROMPT_FILE = PROJECT_ROOT / "docs" / "prompts" / "覆盖分析提示词-v1.md"
+# 覆盖分析提示词（v1 保留归档，运行使用格式更稳定的 v2）
+PROMPT_FILE = PROJECT_ROOT / "docs" / "prompts" / "覆盖分析提示词-v2.md"
+# 网页中保存的自定义版本。缺失时继续使用上面的项目默认提示词。
+CUSTOM_PROMPT_FILE = PROJECT_ROOT / ".coverage-prompt.md"
 
 # ---- GitLab ------------------------------------------------------------
 GITLAB_HOST = "git.tongyuan.cc"  # 默认值；网页配置可覆盖

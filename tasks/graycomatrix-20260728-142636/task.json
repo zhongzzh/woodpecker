@@ -1,0 +1,32 @@
+{
+  "name": "graycomatrix 函数",
+  "func": "graycomatrix",
+  "task_type": "local_analysis",
+  "input_mode": "local",
+  "code_mr": null,
+  "doc_mr": null,
+  "local_code": "C:\\Users\\TR\\Desktop\\doc\\TyImageProcessing.jl\\test\\im_math\\test_graycomatrix.jl",
+  "local_doc": "C:\\Users\\TR\\Desktop\\doc\\syslab-docs-2.0\\syslabHelpSourceCode\\projects\\TyImageProcessing\\Doc\\TyImageProcessing\\ImageSegmentationandAnalysis\\TextureAnalysis\\graycomatrix.md",
+  "local_code_input": "C:/Users/TR/Desktop/doc/TyImageProcessing.jl",
+  "local_doc_input": "C:/Users/TR/Desktop/doc/syslab-docs-2.0/syslabHelpSourceCode/projects/TyImageProcessing",
+  "local_code_files": [
+    "C:\\Users\\TR\\Desktop\\doc\\TyImageProcessing.jl\\test\\im_math\\test_graycomatrix.jl",
+    "C:\\Users\\TR\\Desktop\\doc\\TyImageProcessing.jl\\src\\graycomatrix.jl"
+  ],
+  "local_doc_files": [
+    "C:\\Users\\TR\\Desktop\\doc\\syslab-docs-2.0\\syslabHelpSourceCode\\projects\\TyImageProcessing\\Doc\\TyImageProcessing\\ImageSegmentationandAnalysis\\TextureAnalysis\\graycomatrix.md"
+  ],
+  "code_branch": "本地文件",
+  "doc_branch": "本地文件",
+  "doc_md": "graycomatrix.md",
+  "unit_test": "test/im_math/test_graycomatrix.jl",
+  "benchmark": null,
+  "perf_note_heading": null,
+  "pasted_performance_report": true,
+  "coverage_ai_status": "completed",
+  "coverage_ai_error": null,
+  "performance_ai_status": "completed",
+  "performance_ai_error": null,
+  "model": "grok-4.5",
+  "generated_at": "2026-07-28T14:28:13"
+}

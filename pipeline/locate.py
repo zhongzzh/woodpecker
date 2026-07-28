@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from . import repo as repo_mod
@@ -28,33 +29,82 @@ def local_file(path_text: str, label: str) -> Path:
     return local_path(path_text, label)
 
 
+def _local_matches(source: Path, func: str, suffix: str, label: str) -> tuple[list[Path], Path]:
+    """查找文件名严格包含函数名的本地材料。"""
+    if source.is_file():
+        if source.suffix.lower() != suffix or func not in source.stem:
+            raise LocateError(
+                f"{label}文件名必须包含完整函数名 {func!r}，且扩展名为 {suffix}：{source}"
+            )
+        return [source], source.parent
+
+    hits = []
+    ignored_dirs = {".git", ".venv", "__pycache__", "node_modules"}
+    for directory, dirnames, filenames in os.walk(source):
+        dirnames[:] = [name for name in dirnames if name not in ignored_dirs]
+        hits.extend(
+            Path(directory) / name for name in filenames
+            if Path(name).suffix.lower() == suffix and func in Path(name).stem
+        )
+    hits.sort()
+    if not hits:
+        raise LocateError(
+            f"{source} 下未找到文件名包含完整函数名 {func!r} 的 {suffix} 文件"
+        )
+    return hits, source
+
+
+def _local_code_rank(path: Path, root: Path, func: str) -> tuple:
+    """优先选测试文件作为本地代码材料的主文件，其余命中项仍全部保留。"""
+    try:
+        relative_parts = path.relative_to(root).parts[:-1]
+    except ValueError:
+        relative_parts = path.parts[:-1]
+    test_file = path.stem.startswith("test_")
+    in_test_tree = any(part.lower() in ("test", "tests") for part in relative_parts)
+    if path.stem == func:
+        name_rank = 0
+    elif path.stem == f"test_{func}":
+        name_rank = 1
+    elif path.stem.startswith(func):
+        name_rank = 2
+    else:
+        name_rank = 3
+    return (0 if test_file or in_test_tree else 1, name_rank, str(path))
+
+
 def find_local_unit_test(path_text: str, func: str, log=print) -> dict:
     """从用户指定的文件或目录中读取本地代码/单测。
 
-    文件模式直接使用该文件，并自动收集同目录的 ``<func>_*.jl``；目录模式
-    优先在 ``test/`` 下按 ``<func>.jl`` 定位，没有 test/ 时在整个目录查找。
+    文件名必须严格包含函数名。目录模式递归收集所有命中的 ``.jl`` 文件，
+    并优先选测试目录或 ``test_<func>.jl`` 作为主文件，其余作为伴随材料。
     """
     source = local_path(path_text, "本地代码/单测路径", allow_directory=True)
-
+    matches, root = _local_matches(source, func, ".jl", "本地代码/单测")
     if source.is_file():
-        main = source
-        root = source.parent
-    elif source.is_dir():
-        root = source
-        search_root = source / "test" if (source / "test").is_dir() else source
-        mains = sorted(search_root.rglob(f"{func}.jl"))
-        if not mains:
-            raise LocateError(f"{search_root} 下未找到 {func}.jl")
-        if len(mains) > 1:
-            raise LocateError(f"本地路径下有多个 {func}.jl，无法确定：{mains}")
-        main = mains[0]
-    else:
-        raise LocateError(f"本地代码/单测路径既不是文件也不是目录：{source}")
-
-    companions = sorted(p for p in main.parent.glob(f"{func}_*.jl") if p != main)
-    log(f"  本地代码/单测: {main}"
-        + (f"（伴随数据 {len(companions)} 个）" if companions else ""))
+        matches = sorted(
+            path for path in source.parent.iterdir()
+            if path.is_file() and path.suffix.lower() == ".jl" and func in path.stem
+        )
+    matches.sort(key=lambda path: _local_code_rank(path, root, func))
+    main, companions = matches[0], matches[1:]
+    log(
+        f"  本地代码/单测: {main}"
+        + (f"（另找到相关文件 {len(companions)} 个）" if companions else "")
+    )
     return {"main": main, "companions": companions, "root": root}
+
+
+def find_local_docs(path_text: str, func: str, log=print) -> list[Path]:
+    """从用户指定的文件或母目录中查找函数文档，允许命中多个。"""
+    source = local_path(path_text, "本地文档路径", allow_directory=True)
+    matches, _root = _local_matches(source, func, ".md", "本地文档")
+    matches.sort(key=lambda path: (0 if path.stem == func else 1, str(path)))
+    log(
+        f"  本地文档: {matches[0]}"
+        + (f"（另找到同函数文档 {len(matches) - 1} 个）" if len(matches) > 1 else "")
+    )
+    return matches
 
 
 def find_doc_md(docs_repo: Path, func: str, base: str, log=print) -> Path:

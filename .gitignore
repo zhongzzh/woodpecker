@@ -3,6 +3,7 @@
 .pw-state.json
 .gitlab-config.json
 .ai-config.json
+.coverage-prompt.md
 .venv/
 __pycache__/
 *.pyc

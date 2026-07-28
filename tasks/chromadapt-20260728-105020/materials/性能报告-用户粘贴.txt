@@ -1,0 +1,57 @@
+chromadapt	using TyImageProcessing
+using TyPlot
+using BenchmarkTools
+
+A = imread("hallway.jpg");
+imshow(A)
+title("Original Image")
+
+x = 2800;
+y = 1000;
+gray_val = impixel(A, x, y);
+hold("on")
+plot(x, y, "."; color="g");
+hold("off")
+
+first_run_time = @elapsed begin
+   B = chromadapt(A, gray_val);
+end
+
+second_run_time = @belapsed begin
+   B = chromadapt(A, gray_val);
+end
+
+figure()
+imshow(B)
+title("White-Balanced Image")
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+filename = fullfile(matlabroot,"toolbox","images","imdata","hallway.jpg");
+A = imread(filename);
+
+imshow(A)
+title("Original Image")
+
+x = 2800;
+y = 1000;
+gray_val = impixel(A,x,y)
+hold on
+plot(x,y,".","Color","g")
+hold off
+
+tic;
+B = chromadapt(A,gray_val);
+first_run_time = toc;
+
+tic;
+B = chromadapt(A,gray_val);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)
+
+figure
+imshow(B)
+title("White-Balanced Image")	11.0412721	4.8529529	1.529016	1.331454	2.275163	2.1330132

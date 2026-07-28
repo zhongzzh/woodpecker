@@ -2,7 +2,7 @@
 
 在线新增函数（D8）：任务名 + 代码 MR + 文档 MR。
 在线性能优化（D23~D28）：任务名 + 代码 MR；文档从本地既有文档仓库读取。
-本地材料：任务名 + 本地代码/单测路径 + 本地文档路径；不访问 MR/Git。
+本地材料：任务名 + 代码/单测路径 + 文档路径；目录按函数名自动定位，不访问 MR/Git。
 """
 
 from __future__ import annotations
@@ -25,8 +25,8 @@ class TaskCard:
     doc_mr: str = ""   # 新增函数必填；性能优化从本地既有文档仓库读取
     func: str = ""     # 函数名；缺省时从任务名解析
     input_mode: str = "remote"  # remote / local
-    local_code: str = ""        # 本地代码/单测文件或目录
-    local_doc: str = ""         # 本地文档文件
+    local_code: str = ""        # 代码/单测文件或其母目录
+    local_doc: str = ""         # 文档文件或其母目录
     task_type: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -51,15 +51,17 @@ class TaskCard:
             # 避免误把 TyDifferentialEquation 等库名当函数名。
             if self.task_type == "new_function":
                 m = re.search(r"新增\s*([A-Za-z_][A-Za-z0-9_!]*)\s*函数", self.name)
-            else:
+            elif self.task_type == "performance_optimization":
                 m = re.search(
                     r"([A-Za-z_][A-Za-z0-9_!]*)\s*函数?\s*性能优化", self.name
                 )
+            else:
+                m = re.search(r"([A-Za-z_][A-Za-z0-9_!]*)\s*函数", self.name)
             if m:
                 self.func = m.group(1)
 
         if not self.func and self.is_local:
-            if self.local_doc.strip():
+            if self.local_doc.strip() and Path(self.local_doc.strip()).suffix:
                 self.func = Path(self.local_doc.strip()).stem
             elif self.local_code.strip() and Path(self.local_code.strip()).suffix:
                 self.func = Path(self.local_code.strip()).stem
@@ -70,7 +72,7 @@ class TaskCard:
             if not self.local_code.strip():
                 raise ValueError("本地材料模式必须提供代码/单测文件或目录")
             if not self.local_doc.strip():
-                raise ValueError("本地材料模式必须提供文档文件")
+                raise ValueError("本地材料模式必须提供文档文件或目录")
         elif not self.code_mr.strip():
             raise ValueError("在线模式必须提供代码 MR 链接")
         elif self.task_type == "new_function" and not self.doc_mr.strip():
