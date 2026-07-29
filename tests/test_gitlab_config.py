@@ -46,6 +46,17 @@ class GitLabConfigTests(unittest.TestCase):
         self.assertIn("连接被关闭", message)
         self.assertIn("VPN/代理", message)
 
+    def test_authenticated_url_requires_return_to_gitlab_host(self):
+        self.assertTrue(login._is_authenticated_url(
+            "https://git.example.com/dashboard/projects", "git.example.com"
+        ))
+        self.assertFalse(login._is_authenticated_url(
+            "https://git.example.com/users/sign_in", "git.example.com"
+        ))
+        self.assertFalse(login._is_authenticated_url(
+            "https://sso.example.com/login", "git.example.com"
+        ))
+
 
 if __name__ == "__main__":
     unittest.main()

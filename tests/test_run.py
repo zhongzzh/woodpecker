@@ -2,7 +2,7 @@ import json
 import tempfile
 import unittest
 from pathlib import Path
-from unittest.mock import patch
+from unittest.mock import ANY, patch
 
 from pipeline import analyze, config
 from pipeline.run import run
@@ -33,7 +33,9 @@ class PerformanceOptimizationPipelineTests(unittest.TestCase):
                 code_mr="https://git.tongyuan.cc/syslab/packages/math/TyStatisticsCore.jl/-/merge_requests/472",
             )
 
-            def fake_ensure(project, log=print):
+            def fake_ensure(project, log=print, local_path=None):
+                if project == config.DOCS_REPO_PROJECT:
+                    self.assertEqual(local_path, config.DOCS_REPO_DIR)
                 return docs_repo if project == config.DOCS_REPO_PROJECT else code_repo
 
             with (
@@ -68,6 +70,114 @@ class PerformanceOptimizationPipelineTests(unittest.TestCase):
 
 
 class LocalMaterialPipelineTests(unittest.TestCase):
+    def test_manual_local_paths_can_build_document_html(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs_repo = root / config.DOCS_REPO_NAME
+            doc_relative = (
+                "syslabHelpSourceCode/projects/TyImageProcessing/Doc/"
+                "TyImageProcessing/sample.md"
+            )
+            doc_file = docs_repo / Path(*doc_relative.split("/"))
+            unit_file = root / "code" / "test_sample.jl"
+            (docs_repo / ".git").mkdir(parents=True)
+            for path, content in ((doc_file, "# sample"), (unit_file, "@test true")):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+            card = TaskCard(
+                name="sample", input_mode="local",
+                local_library="TyImageProcessing",
+                local_code=str(unit_file), local_doc=str(doc_file),
+            )
+            preview = {
+                "project": "TyImageProcessing",
+                "html": str(root / "sample.html"),
+                "url": "file:///sample.html",
+                "browser_opened": True,
+            }
+
+            with (
+                patch.object(config, "TASKS_DIR", root / "tasks"),
+                patch.object(config, "DOCS_REPO_DIR", docs_repo),
+                patch(
+                    "pipeline.run.doc_html.build_and_open", return_value=preview
+                ) as build,
+            ):
+                report_path = run(
+                    card, skip_ai=True, build_doc_html=True,
+                    log=lambda _message: None,
+                )
+
+            build.assert_called_once_with(
+                docs_repo.resolve(), doc_relative, "sample", log=ANY,
+            )
+            task = json.loads(
+                (report_path.parent / "task.json").read_text(encoding="utf-8")
+            )
+            self.assertEqual(task["doc_md"], doc_relative)
+            self.assertTrue(task["doc_html_requested"])
+
+    def test_local_repository_pipeline_can_build_document_html(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tasks_dir = root / "tasks"
+            docs_repo = root / config.DOCS_REPO_NAME
+            code_repo = root / "TyImageProcessing.jl"
+            doc_relative = (
+                "syslabHelpSourceCode/projects/TyImageProcessing/Doc/"
+                "TyImageProcessing/graydiffweight.md"
+            )
+            doc_file = docs_repo / Path(*doc_relative.split("/"))
+            test_file = code_repo / "test" / "test_graydiffweight.jl"
+            source_file = code_repo / "src" / "graydiffweight.jl"
+            for repository in (docs_repo, code_repo):
+                (repository / ".git").mkdir(parents=True)
+            for path, content in (
+                (doc_file, "# graydiffweight"),
+                (test_file, "@test true"),
+                (source_file, "graydiffweight() = true"),
+            ):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text(content, encoding="utf-8")
+            card = TaskCard(
+                name="graydiffweight",
+                input_mode="local",
+                local_library="TyImageProcessing",
+                local_branch="pyh/add_graydiffweight",
+            )
+            preview = {
+                "project": "TyImageProcessing",
+                "html": str(root / "graydiffweight.html"),
+                "url": "file:///graydiffweight.html",
+                "browser_opened": True,
+            }
+
+            with (
+                patch.object(config, "TASKS_DIR", tasks_dir),
+                patch.object(config, "DOCS_REPO_DIR", docs_repo),
+                patch.object(config, "CLONE_ROOT", root),
+                patch("pipeline.run.repo.prepare_branch") as prepare,
+                patch(
+                    "pipeline.run.doc_html.build_and_open", return_value=preview
+                ) as build,
+            ):
+                report_path = run(
+                    card, skip_ai=True, build_doc_html=True,
+                    log=lambda _message: None,
+                )
+
+            build.assert_called_once_with(
+                docs_repo.resolve(), doc_relative, "graydiffweight",
+                log=ANY,
+            )
+            self.assertEqual(prepare.call_count, 2)
+            task = json.loads(
+                (report_path.parent / "task.json").read_text(encoding="utf-8")
+            )
+            self.assertTrue(task["doc_html_requested"])
+            self.assertEqual(task["doc_html_project"], "TyImageProcessing")
+            self.assertEqual(task["doc_md"], doc_relative)
+
     def test_local_pipeline_resolves_separate_parent_directories(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -99,6 +209,9 @@ class LocalMaterialPipelineTests(unittest.TestCase):
             self.assertEqual(task["local_doc_files"], [str(doc_file)])
             self.assertTrue((report_path.parent / "materials" / test_file.name).exists())
             self.assertTrue((report_path.parent / "materials" / source_file.name).exists())
+            self.assertFalse(
+                (report_path.parent / config.LOCAL_PATHS_STATE_NAME).exists()
+            )
 
     def test_local_pipeline_skips_git_and_optional_performance(self):
         with tempfile.TemporaryDirectory() as tmp:

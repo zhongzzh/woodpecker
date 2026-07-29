@@ -27,6 +27,28 @@ class ExistingDocLocateTests(unittest.TestCase):
 
 
 class LocalMaterialLocateTests(unittest.TestCase):
+    def test_library_name_resolves_dot_jl_repository(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = Path(tmp) / "TyImageProcessing.jl"
+            (repository / ".git").mkdir(parents=True)
+
+            result = locate.find_local_library_repo("TyImageProcessing", Path(tmp))
+
+        self.assertEqual(result, repository)
+
+    def test_library_name_uses_configured_repository_root(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repository = Path(tmp) / "TyImageProcessing.jl"
+            (repository / ".git").mkdir(parents=True)
+            with patch.object(locate.config, "CLONE_ROOT", Path(tmp)):
+                result = locate.find_local_library_repo("TyImageProcessing")
+
+        self.assertEqual(result, repository)
+
+    def test_library_name_cannot_escape_repository_root(self):
+        with self.assertRaisesRegex(locate.LocateError, "格式不正确"):
+            locate.find_local_library_repo("../elsewhere", Path("unused"))
+
     def test_file_mode_collects_companion_files(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)

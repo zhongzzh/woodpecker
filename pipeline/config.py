@@ -12,20 +12,23 @@ from urllib.parse import urlparse
 # woodpecker 项目根（本文件的上上级）
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 
-# 被测仓库缓存目录。默认放当前用户的本地数据目录，不绑定用户名或项目所在磁盘；
-# 可用 WOODPECKER_CLONE_ROOT 覆盖，复用已有仓库目录。
-_local_app_data = os.environ.get("LOCALAPPDATA")
-_user_data = (
-    Path(_local_app_data) / "woodpecker"
-    if _local_app_data
-    else Path.home() / ".woodpecker"
-)
+# 被测代码仓库的共享工作区。优先复用测试人员长期维护的 Desktop/doc 下现有仓库；
+# 某个库不存在时也只在这里首次 clone。可用 WOODPECKER_CLONE_ROOT 覆盖。
 CLONE_ROOT = Path(
-    os.environ.get("WOODPECKER_CLONE_ROOT", str(_user_data / "repos"))
+    os.environ.get("WOODPECKER_CLONE_ROOT", str(Path.home() / "Desktop" / "doc"))
+).expanduser()
+
+# 文档仓库与代码仓库共享同一工作区；需要单独放置时仍可独立覆盖。
+DOCS_REPO_DIR = Path(
+    os.environ.get(
+        "WOODPECKER_DOCS_REPO",
+        str(CLONE_ROOT / "syslab-docs-2.0"),
+    )
 ).expanduser()
 
 # 任务产出目录：tasks/<函数名>-<日期>/
 TASKS_DIR = PROJECT_ROOT / "tasks"
+LOCAL_PATHS_STATE_NAME = ".local-material-paths.json"
 
 # Playwright GitLab 登录态（网页「GitLab 设置」中人工登录生成；已 gitignore）
 PW_STATE_FILE = PROJECT_ROOT / ".pw-state.json"

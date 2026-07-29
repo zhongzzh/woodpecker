@@ -32,11 +32,42 @@ class AnalyzeError(RuntimeError):
 
 # ---- 用户 AI 配置（网页「AI 设置」读写） ---------------------------------
 
-_AI_FIELDS = ("protocol", "base_url", "api_key", "model")
+_AI_TEXT_FIELDS = ("protocol", "base_url", "api_key", "model")
+_AI_FIELDS = (*_AI_TEXT_FIELDS, "timeout_seconds")
+DEFAULT_AI_TIMEOUT_SECONDS = 1200
+MIN_AI_TIMEOUT_SECONDS = 10
+MAX_AI_TIMEOUT_SECONDS = 3600
+
+
+def normalize_timeout_seconds(value, default: int = DEFAULT_AI_TIMEOUT_SECONDS) -> int:
+    """解析每个公益站自己的请求超时，范围 10 秒到 1 小时。"""
+    if value is None or str(value).strip() == "":
+        value = default
+    try:
+        timeout = int(value)
+    except (TypeError, ValueError) as exc:
+        raise AnalyzeError("请求超时必须填写整数秒") from exc
+    if not MIN_AI_TIMEOUT_SECONDS <= timeout <= MAX_AI_TIMEOUT_SECONDS:
+        raise AnalyzeError(
+            f"请求超时必须在 {MIN_AI_TIMEOUT_SECONDS}~{MAX_AI_TIMEOUT_SECONDS} 秒之间"
+        )
+    return timeout
+
+
+def _default_timeout_seconds() -> int:
+    try:
+        return normalize_timeout_seconds(
+            os.environ.get("WOODPECKER_AI_TIMEOUT"), DEFAULT_AI_TIMEOUT_SECONDS
+        )
+    except AnalyzeError:
+        return DEFAULT_AI_TIMEOUT_SECONDS
 
 
 def _empty_ai_config() -> dict:
-    return {key: "" for key in _AI_FIELDS}
+    return {
+        **{key: "" for key in _AI_TEXT_FIELDS},
+        "timeout_seconds": _default_timeout_seconds(),
+    }
 
 
 def _write_ai_config_store(store: dict) -> None:
@@ -65,6 +96,12 @@ def load_ai_config_store() -> dict:
             if protocol not in ("", "openai", "anthropic"):
                 continue
             seen.add(profile_id)
+            try:
+                timeout_seconds = normalize_timeout_seconds(
+                    item.get("timeout_seconds"), _default_timeout_seconds()
+                )
+            except AnalyzeError:
+                timeout_seconds = _default_timeout_seconds()
             profiles.append({
                 "id": profile_id,
                 "name": str(item.get("name", "")).strip() or "未命名公益站",
@@ -72,6 +109,7 @@ def load_ai_config_store() -> dict:
                 "base_url": str(item.get("base_url", "")).strip(),
                 "api_key": str(item.get("api_key", "")).strip(),
                 "model": str(item.get("model", "")).strip(),
+                "timeout_seconds": timeout_seconds,
             })
         active = str(raw.get("active_profile_id", "")).strip()
         if active not in seen:
@@ -80,7 +118,17 @@ def load_ai_config_store() -> dict:
 
     # 旧版只有一组 protocol/base_url/api_key/model。只要存在任一值就迁移，
     # 尤其不能因为浏览器不可见 API Key 而在升级时丢掉它。
-    legacy = {key: str(raw.get(key, "")).strip() for key in _AI_FIELDS} if isinstance(raw, dict) else _empty_ai_config()
+    legacy = (
+        {key: str(raw.get(key, "")).strip() for key in _AI_TEXT_FIELDS}
+        if isinstance(raw, dict) else {key: "" for key in _AI_TEXT_FIELDS}
+    )
+    try:
+        legacy["timeout_seconds"] = (
+            normalize_timeout_seconds(raw.get("timeout_seconds"), _default_timeout_seconds())
+            if isinstance(raw, dict) else _default_timeout_seconds()
+        )
+    except AnalyzeError:
+        legacy["timeout_seconds"] = _default_timeout_seconds()
     profiles = []
     active = ""
     if any(legacy.values()):
@@ -103,7 +151,7 @@ def get_ai_profile(profile_id: str) -> dict | None:
 
 
 def load_ai_config() -> dict:
-    """返回当前启用档案，保持原有调用方所需的四字段格式。"""
+    """返回当前启用档案，包括该中转站自己的请求超时。"""
     store = load_ai_config_store()
     active = store["active_profile_id"]
     profile = next((p for p in store["profiles"] if p["id"] == active), None)
@@ -112,7 +160,7 @@ def load_ai_config() -> dict:
 
 def save_ai_profile(
     profile_id: str, name: str, base_url: str, api_key: str, model: str,
-    protocol: str = "",
+    protocol: str = "", timeout_seconds=None,
 ) -> str:
     """新增或更新一个公益站档案，并将其设为当前档案。"""
     protocol = protocol.strip().lower()
@@ -130,9 +178,14 @@ def save_ai_profile(
         profile_id = uuid.uuid4().hex
         existing = {"id": profile_id}
         store["profiles"].append(existing)
+    timeout = normalize_timeout_seconds(
+        timeout_seconds,
+        existing.get("timeout_seconds", _default_timeout_seconds()),
+    )
     existing.update({
         "name": name, "protocol": protocol, "base_url": base_url.strip(),
         "api_key": api_key.strip(), "model": model.strip(),
+        "timeout_seconds": timeout,
     })
     store["active_profile_id"] = profile_id
     _write_ai_config_store(store)
@@ -205,7 +258,8 @@ def _environment_defaults(protocol: str) -> dict:
 
 
 def resolve_ai_config(
-    protocol: str = "", base_url: str = "", api_key: str = "", model: str = ""
+    protocol: str = "", base_url: str = "", api_key: str = "", model: str = "",
+    timeout_seconds=None,
 ) -> dict:
     """把表单临时值、已保存配置和环境变量合并为一次调用的实际配置。"""
     cfg = load_ai_config()
@@ -227,6 +281,11 @@ def resolve_ai_config(
         ),
         "api_key": api_key.strip() or (cfg["api_key"] if saved_applies else "") or env["api_key"],
         "model": model.strip() or (cfg["model"] if saved_applies else "") or env["model"],
+        "timeout_seconds": normalize_timeout_seconds(
+            timeout_seconds,
+            cfg.get("timeout_seconds", _default_timeout_seconds())
+            if saved_applies else _default_timeout_seconds(),
+        ),
     }
 
 
@@ -243,13 +302,15 @@ def current_protocol() -> str:
     return _effective()["protocol"]
 
 
-def list_models(base_url: str = "", api_key: str = "", protocol: str = "") -> list[str]:
+def list_models(
+    base_url: str = "", api_key: str = "", protocol: str = "", timeout_seconds=None
+) -> list[str]:
     """一键获取端点支持的模型清单（GET <base>/v1/models）。
 
     入参留空则用当前生效配置。鉴权同时带 Bearer 与 x-api-key 两种头，
     兼容 Anthropic 官方与各类中转代理。
     """
-    eff = resolve_ai_config(protocol, base_url, api_key)
+    eff = resolve_ai_config(protocol, base_url, api_key, timeout_seconds=timeout_seconds)
     protocol = eff["protocol"]
     base = eff["base_url"]
     key = eff["api_key"]
@@ -270,7 +331,7 @@ def list_models(base_url: str = "", api_key: str = "", protocol: str = "") -> li
         headers.update({"x-api-key": key, "anthropic-version": "2023-06-01"})
     req = urllib.request.Request(f"{base}/v1/models", headers=headers)
     try:
-        with urllib.request.urlopen(req, timeout=20) as resp:
+        with urllib.request.urlopen(req, timeout=eff["timeout_seconds"]) as resp:
             data = json.load(resp)
     except urllib.error.HTTPError as e:
         detail = e.read().decode("utf-8", errors="replace")[:200]
@@ -405,7 +466,9 @@ def _via_openai(
             method="POST",
         )
         try:
-            with urllib.request.urlopen(req, timeout=1200) as resp:
+            with urllib.request.urlopen(
+                req, timeout=eff.get("timeout_seconds", _default_timeout_seconds())
+            ) as resp:
                 return json.load(resp)
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")[:1000]
@@ -417,10 +480,17 @@ def _via_openai(
                 log("  [openai] 端点要求 max_completion_tokens，自动重试")
                 return _request("max_completion_tokens")
             raise AnalyzeError(f"OpenAI 请求失败（HTTP {e.code}）：{detail}") from e
-        except (urllib.error.URLError, TimeoutError, json.JSONDecodeError) as e:
+        except TimeoutError as e:
+            raise AnalyzeError(
+                f"OpenAI 请求超过 {eff.get('timeout_seconds', _default_timeout_seconds())} 秒未完成"
+            ) from e
+        except (urllib.error.URLError, json.JSONDecodeError) as e:
             raise AnalyzeError(f"OpenAI 请求失败：{e}") from e
 
-    log(f"  [openai] 调用 {eff['model']}（输入约 {len(system) + len(user)} 字符）……")
+    log(
+        f"  [openai] 调用 {eff['model']}（输入约 {len(system) + len(user)} 字符，"
+        f"超时 {eff.get('timeout_seconds', _default_timeout_seconds())} 秒）……"
+    )
     data = _request("max_tokens")
     choices = data.get("choices", []) if isinstance(data, dict) else []
     if not choices or not isinstance(choices[0], dict):
@@ -458,7 +528,9 @@ def _via_sdk(
         # 两种鉴权头都带上：官方 API 认 x-api-key，常见中转代理认 Bearer
         kwargs["api_key"] = eff["api_key"]
         kwargs["auth_token"] = eff["api_key"]
-    client = anthropic.Anthropic(**kwargs)
+    client = anthropic.Anthropic(
+        timeout=eff.get("timeout_seconds", _default_timeout_seconds()), **kwargs
+    )
 
     def _stream(extra_headers: dict | None) -> tuple[str, object]:
         chunks: list[str] = []
@@ -473,7 +545,10 @@ def _via_sdk(
                 chunks.append(text)
             return "".join(chunks).strip(), stream.get_final_message()
 
-    log(f"  [sdk] 调用 {eff['model']}（流式，输入约 {len(system) + len(user)} 字符）……")
+    log(
+        f"  [sdk] 调用 {eff['model']}（流式，输入约 {len(system) + len(user)} 字符，"
+        f"超时 {eff.get('timeout_seconds', _default_timeout_seconds())} 秒）……"
+    )
     try:
         report, final = _stream(None)
     except anthropic.APIStatusError as e:
@@ -491,7 +566,7 @@ def _via_sdk(
 
 def test_ai_prompt(
     question: str, base_url: str = "", api_key: str = "", model: str = "",
-    protocol: str = "", log=lambda _message: None,
+    protocol: str = "", timeout_seconds=None, log=lambda _message: None,
 ) -> str:
     """用设置面板当前值发起一次真实试问，不允许降级到 CLI。"""
     question = question.strip()
@@ -499,7 +574,7 @@ def test_ai_prompt(
         raise AnalyzeError("请先填写测试问题")
     if len(question) > 4000:
         raise AnalyzeError("测试问题不能超过 4000 个字符")
-    eff = resolve_ai_config(protocol, base_url, api_key, model)
+    eff = resolve_ai_config(protocol, base_url, api_key, model, timeout_seconds)
     if not eff["model"]:
         raise AnalyzeError("模型为空：请先获取并选择模型")
     system = "你正在执行 AI 接口连通性测试。请直接、简洁地回答用户问题。"

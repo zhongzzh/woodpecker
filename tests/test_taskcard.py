@@ -50,6 +50,35 @@ class TaskCardTests(unittest.TestCase):
         self.assertEqual(card.local_code, str(Path("code")))
         self.assertEqual(card.local_doc, str(Path("docs")))
 
+    def test_local_repository_mode_accepts_bare_function_name(self):
+        card = TaskCard(
+            name="graydiffweight",
+            input_mode="local",
+            local_library="TyImageProcessing",
+            local_branch="pyh/add_graydiffweight",
+        )
+        self.assertEqual(card.func, "graydiffweight")
+        self.assertTrue(card.uses_local_repositories)
+        self.assertEqual(card.code_repo_name, "TyImageProcessing")
+
+    def test_local_repository_mode_requires_library(self):
+        with self.assertRaisesRegex(ValueError, "必须提供函数库名称"):
+            TaskCard(
+                name="graydiffweight",
+                input_mode="local",
+                local_branch="pyh/add_graydiffweight",
+            )
+
+    def test_local_library_with_paths_uses_manual_materials(self):
+        card = TaskCard(
+            name="graydiffweight",
+            input_mode="local",
+            local_library="TyImageProcessing",
+            local_code="code",
+            local_doc="docs",
+        )
+        self.assertFalse(card.uses_local_repositories)
+
     def test_local_mode_requires_both_paths(self):
         with self.assertRaisesRegex(ValueError, "必须提供文档文件或目录"):
             TaskCard(

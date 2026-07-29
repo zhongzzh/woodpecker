@@ -37,7 +37,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import analyze, config, locate, paste
+from . import analyze, config, locate, login, paste
 from .taskcard import TaskCard
 
 HOST, PORT = "127.0.0.1", 8737
@@ -58,6 +58,7 @@ class _Job:
         self.error: str | None = None
         self.report_dir: str | None = None
         self.out_dir: str | None = None  # 本次运行的产出目录（从日志解析）
+        self.resolved_paths: dict | None = None
 
     def log(self, msg: str) -> None:
         with self.lock:
@@ -65,13 +66,23 @@ class _Job:
 
     def snapshot(self) -> dict:
         with self.lock:
-            return {
+            snapshot = {
                 "running": self.running,
                 "stopped": self.stopped,
                 "log": list(self.log_lines),
                 "error": self.error,
                 "report_dir": self.report_dir,
+                "resolved_paths": self.resolved_paths,
             }
+            out_dir = self.out_dir
+        if snapshot["resolved_paths"] is None:
+            resolved = _read_resolved_paths(out_dir)
+            if resolved:
+                with self.lock:
+                    if self.out_dir == out_dir:
+                        self.resolved_paths = resolved
+                snapshot["resolved_paths"] = resolved
+        return snapshot
 
 
 _job = _Job()
@@ -83,6 +94,35 @@ _ui_clients = 0
 _ui_generation = 0
 _ui_ever_connected = False
 _UI_CLOSE_GRACE_SECONDS = 8
+
+
+def _read_resolved_paths(out_dir: str | None) -> dict | None:
+    """读取子进程刚定位出的本地材料；任务完成后回退到 task.json。"""
+    if not out_dir:
+        return None
+    directory = Path(out_dir).resolve()
+    if directory.parent != config.TASKS_DIR.resolve():
+        return None
+    candidates = [
+        directory / config.LOCAL_PATHS_STATE_NAME,
+        directory / "task.json",
+    ]
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            value = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, json.JSONDecodeError):
+            continue
+        if not isinstance(value, dict) or not value.get("local_code") or not value.get("local_doc"):
+            continue
+        return {
+            "local_code": str(value["local_code"]),
+            "local_doc": str(value["local_doc"]),
+            "local_code_files": [str(item) for item in value.get("local_code_files", [])],
+            "local_doc_files": [str(item) for item in value.get("local_doc_files", [])],
+        }
+    return None
 
 
 def _ui_connected() -> None:
@@ -123,10 +163,19 @@ def _build_argv(payload: dict) -> list[str]:
         "--name", payload["name"].strip(),
     ]
     if payload.get("input_mode") == "local":
-        argv += [
-            "--local-code", payload["local_code"].strip(),
-            "--local-doc", payload["local_doc"].strip(),
-        ]
+        if payload.get("local_branch", "").strip():
+            argv += [
+                "--local-library", payload["local_library"].strip(),
+                "--local-branch", payload["local_branch"].strip(),
+            ]
+        else:
+            # 保留旧 API/命令行调用的路径式本地材料输入。
+            argv += [
+                "--local-code", payload["local_code"].strip(),
+                "--local-doc", payload["local_doc"].strip(),
+            ]
+            if payload.get("local_library", "").strip():
+                argv += ["--local-library", payload["local_library"].strip()]
     else:
         argv += ["--code-mr", payload["code_mr"].strip()]
         if payload.get("doc_mr", "").strip():
@@ -139,6 +188,8 @@ def _build_argv(payload: dict) -> list[str]:
         argv += ["--doc-branch", payload["doc_branch"].strip()]
     if payload.get("no_ai"):
         argv += ["--no-ai"]
+    if payload.get("build_doc_html"):
+        argv += ["--build-doc-html"]
     if payload.get("perf_report_file", "").strip():
         argv += ["--perf-report-file", payload["perf_report_file"].strip()]
     return argv
@@ -222,6 +273,7 @@ def _start_job(payload: dict) -> tuple[bool, str]:
         _job.error = None
         _job.report_dir = None
         _job.out_dir = None
+        _job.resolved_paths = None
 
     env = {**os.environ, "PYTHONUTF8": "1"}  # 子进程 stdout/stderr 统一 utf-8
     launch_payload = dict(payload)
@@ -354,6 +406,7 @@ def _public_ai_config() -> dict:
             "protocol": profile["protocol"],
             "base_url": profile["base_url"],
             "model": profile["model"],
+            "timeout_seconds": profile["timeout_seconds"],
             "has_saved_key": bool(profile["api_key"]),
             "api_key_masked": analyze.mask_api_key(profile["api_key"]),
         })
@@ -361,7 +414,8 @@ def _public_ai_config() -> dict:
     active = next((p for p in public_profiles if p["id"] == active_id), None)
     cfg = dict(active) if active else {
         "id": "", "name": "环境变量默认", "protocol": "", "base_url": "",
-        "model": "", "has_saved_key": False, "api_key_masked": "",
+        "model": "", "timeout_seconds": analyze._default_timeout_seconds(),
+        "has_saved_key": False, "api_key_masked": "",
     }
     cfg["api_key"] = ""
     cfg["active_profile_id"] = active_id
@@ -395,8 +449,51 @@ def _public_ai_config() -> dict:
         "env_base_url": env_base_urls[effective_protocol],
         "has_env_key": has_env_keys[effective_protocol],
         "default_model": default_models[effective_protocol],
+        "default_timeout_seconds": analyze._default_timeout_seconds(),
     })
     return cfg
+
+
+def _public_gitlab_config() -> dict:
+    """返回浏览器可见的 GitLab 网络配置与登录态状态。"""
+    value = config.load_gitlab_config()
+    return {
+        **value,
+        "login_state_exists": config.PW_STATE_FILE.is_file(),
+        "login_state_file": str(config.PW_STATE_FILE),
+    }
+
+
+def _apply_gitlab_action(payload: dict) -> dict:
+    """保存 GitLab 配置，并按需测试连接或打开人工登录窗口。"""
+    action = str(payload.get("action", "save")).strip().lower()
+    if action not in ("save", "test", "login"):
+        raise config.GitLabConfigError(f"不支持的 GitLab 配置操作: {action}")
+    saved = config.save_gitlab_config(
+        str(payload.get("host", "")),
+        payload.get("ssh_port", ""),
+        str(payload.get("proxy", "")),
+    )
+    # 空值表示沿用 WOODPECKER_PROXY / Windows 系统代理；必须传 None，
+    # 不能传空字符串，否则 login 模块会把它理解成强制直连。
+    browser_proxy = saved["proxy"] or None
+    if action == "test":
+        result = login.check_connection(saved["host"], browser_proxy)
+        return {
+            "message": (
+                f"网络连接成功（HTTP {result['status'] or '—'}）；"
+                "这只表示登录页可达，仍需完成 GitLab 登录"
+            ),
+            "connection": result,
+            **_public_gitlab_config(),
+        }
+    if action == "login":
+        login.login_gitlab(saved["host"], browser_proxy)
+        return {
+            "message": "GitLab 登录成功，登录态已更新",
+            **_public_gitlab_config(),
+        }
+    return {"message": "GitLab 设置已保存", **_public_gitlab_config()}
 
 
 def _profile_api_key(payload: dict) -> str:
@@ -479,6 +576,8 @@ class Handler(BaseHTTPRequestHandler):
             self._json(_list_tasks())
         elif u.path == "/api/ai-config":
             self._json(_public_ai_config())
+        elif u.path == "/api/gitlab-config":
+            self._json(_public_gitlab_config())
         elif u.path == "/api/analysis-prompt":
             try:
                 self._json(_coverage_prompt_payload())
@@ -517,7 +616,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "message": str(e)}, 400)
         elif path == "/api/run":
             input_mode = str(payload.get("input_mode", "remote")).strip().lower() or "remote"
-            required = ("name", "local_code", "local_doc") if input_mode == "local" else ("name", "code_mr")
+            if input_mode == "local":
+                repository_mode = bool(str(payload.get("local_branch", "")).strip())
+                required = (
+                    ("name", "local_library", "local_branch")
+                    if repository_mode
+                    else ("name", "local_library", "local_code", "local_doc")
+                )
+            else:
+                required = ("name", "code_mr")
             for field in required:
                 if not str(payload.get(field, "")).strip():
                     self._json({"ok": False, "message": f"输入有误: 缺少必填项 {field}"}, 400)
@@ -532,9 +639,12 @@ class Handler(BaseHTTPRequestHandler):
                     input_mode=input_mode,
                     local_code=str(payload.get("local_code", "")).strip(),
                     local_doc=str(payload.get("local_doc", "")).strip(),
+                    local_library=str(payload.get("local_library", "")).strip(),
+                    local_branch=str(payload.get("local_branch", "")).strip(),
                 )
                 if card.is_local:
-                    resolved_paths = _resolve_local_materials(card)
+                    if not card.uses_local_repositories:
+                        resolved_paths = _resolve_local_materials(card)
                 else:
                     # 提前验证 URL 结构，避免启动子进程后才失败。
                     _ = card.code_project
@@ -553,12 +663,26 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/stop":
             ok, message = _stop_job()
             self._json({"ok": ok, "message": message}, 200 if ok else 409)
+        elif path == "/api/gitlab-config":
+            try:
+                action = str(payload.get("action", "save")).strip().lower()
+                if action == "login" and _job.snapshot()["running"]:
+                    self._json({
+                        "ok": False,
+                        "message": "请先等待当前分析结束或中止任务，再重新登录 GitLab",
+                    }, 409)
+                    return
+                result = _apply_gitlab_action(payload)
+                self._json({"ok": True, **result})
+            except (config.GitLabConfigError, login.LoginError, OSError) as e:
+                self._json({"ok": False, "message": str(e)}, 400)
         elif path == "/api/ai-models":
             try:
                 models = analyze.list_models(
                     str(payload.get("base_url", "")),
                     _profile_api_key(payload),
                     str(payload.get("protocol", "")),
+                    payload.get("timeout_seconds"),
                 )
                 self._json({"ok": True, "models": models})
             except analyze.AnalyzeError as e:
@@ -571,6 +695,7 @@ class Handler(BaseHTTPRequestHandler):
                     _profile_api_key(payload),
                     str(payload.get("model", "")),
                     str(payload.get("protocol", "")),
+                    payload.get("timeout_seconds"),
                 )
                 self._json({"ok": True, "answer": answer})
             except analyze.AnalyzeError as e:
@@ -591,6 +716,7 @@ class Handler(BaseHTTPRequestHandler):
                         api_key,
                         str(payload.get("model", "")),
                         str(payload.get("protocol", "")),
+                        payload.get("timeout_seconds"),
                     )
                     message = "公益站配置已保存并启用"
                 elif action == "activate":

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+from urllib.parse import urlparse
 
 from playwright.sync_api import Error as PlaywrightError
 from playwright.sync_api import TimeoutError as PlaywrightTimeoutError
@@ -17,6 +18,34 @@ class LoginError(RuntimeError):
 
 def _sign_in_url(host: str) -> str:
     return f"https://{host.strip().rstrip('/')}/users/sign_in"
+
+
+def _root_url(host: str) -> str:
+    return f"https://{host.strip().rstrip('/')}/"
+
+
+def _is_authenticated_url(url: str, host: str) -> bool:
+    """登录成功后必须回到目标 GitLab 主机，且不再位于登录页。"""
+    current = urlparse(url)
+    expected = urlparse(_root_url(host))
+    return (
+        current.hostname == expected.hostname
+        and current.path.rstrip("/") != "/users/sign_in"
+        and current.scheme in ("http", "https")
+    )
+
+
+def _launch_login_browser(playwright, proxy: str | None):
+    """人工登录优先使用系统 Chrome，获得正常缩放与原生窗口体验。"""
+    options = {
+        "headless": False,
+        "proxy": {"server": proxy} if proxy else None,
+        "args": ["--start-maximized"],
+    }
+    try:
+        return playwright.chromium.launch(channel="chrome", **options)
+    except PlaywrightError:
+        return playwright.chromium.launch(**options)
 
 
 def _friendly_error(error: Exception, host: str, proxy: str | None) -> str:
@@ -71,27 +100,36 @@ def login_gitlab(host: str | None = None, proxy: str | None = None) -> None:
     proxy = config.system_proxy() if proxy is None else (proxy.strip() or None)
     try:
         with sync_playwright() as p:
-            browser = p.chromium.launch(
-                headless=False, proxy={"server": proxy} if proxy else None
-            )
+            browser = _launch_login_browser(p, proxy)
             try:
                 context = browser.new_context(
                     storage_state=(
                         str(config.PW_STATE_FILE)
                         if config.PW_STATE_FILE.exists()
                         else None
-                    )
+                    ),
+                    no_viewport=True,
                 )
                 page = context.new_page()
-                page.goto(_sign_in_url(host), wait_until="domcontentloaded", timeout=60_000)
+                # wait_until=commit 让浏览器窗口尽快展示，不必等整页资源加载完成。
+                page.goto(_root_url(host), wait_until="commit", timeout=60_000)
+                # 等初始重定向完成后再判断，避免把尚未跳到登录页的根 URL 误认为已登录。
+                page.wait_for_load_state("domcontentloaded", timeout=60_000)
 
-                if "/users/sign_in" in page.url:
+                if not _is_authenticated_url(page.url, host):
                     page.wait_for_url(
-                        lambda url: "/users/sign_in" not in url, timeout=300_000
+                        lambda url: _is_authenticated_url(str(url), host), timeout=300_000
                     )
+                # 不能只凭一次 URL 变化判断成功：重新访问受保护的 GitLab 首页，
+                # 若仍跳回登录页则拒绝保存这份无效状态。
+                page.goto(_root_url(host), wait_until="domcontentloaded", timeout=60_000)
+                if not _is_authenticated_url(page.url, host):
+                    raise LoginError("登录尚未完成：GitLab 首页仍然跳转到登录页")
                 context.storage_state(path=str(config.PW_STATE_FILE))
             finally:
                 browser.close()
+    except LoginError:
+        raise
     except PlaywrightError as e:
         raise LoginError(_friendly_error(e, host, proxy)) from e
 

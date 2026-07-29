@@ -2,7 +2,7 @@
 
 在线新增函数（D8）：任务名 + 代码 MR + 文档 MR。
 在线性能优化（D23~D28）：任务名 + 代码 MR；文档从本地既有文档仓库读取。
-本地材料：任务名 + 代码/单测路径 + 文档路径；目录按函数名自动定位，不访问 MR/Git。
+本地材料支持两种方式：函数名 + 函数库名 + 源分支自动同步定位，或沿用代码/文档路径。
 """
 
 from __future__ import annotations
@@ -27,6 +27,8 @@ class TaskCard:
     input_mode: str = "remote"  # remote / local
     local_code: str = ""        # 代码/单测文件或其母目录
     local_doc: str = ""         # 文档文件或其母目录
+    local_library: str = ""     # 本地仓库模式的函数库名，如 TyImageProcessing
+    local_branch: str = ""      # 文档仓库与代码仓库共同切换到的源分支
     task_type: str = field(init=False)
 
     def __post_init__(self) -> None:
@@ -61,7 +63,9 @@ class TaskCard:
                 self.func = m.group(1)
 
         if not self.func and self.is_local:
-            if self.local_doc.strip() and Path(self.local_doc.strip()).suffix:
+            if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_!]*", self.name.strip()):
+                self.func = self.name.strip()
+            elif self.local_doc.strip() and Path(self.local_doc.strip()).suffix:
                 self.func = Path(self.local_doc.strip()).stem
             elif self.local_code.strip() and Path(self.local_code.strip()).suffix:
                 self.func = Path(self.local_code.strip()).stem
@@ -69,10 +73,15 @@ class TaskCard:
         if not self.func:
             raise ValueError(f"无法从任务名解析函数名，请显式提供 --func：{self.name!r}")
         if self.is_local:
-            if not self.local_code.strip():
-                raise ValueError("本地材料模式必须提供代码/单测文件或目录")
-            if not self.local_doc.strip():
-                raise ValueError("本地材料模式必须提供文档文件或目录")
+            repository_mode = bool(self.local_branch.strip())
+            if repository_mode:
+                if not self.local_library.strip():
+                    raise ValueError("本地材料模式必须提供函数库名称")
+            else:
+                if not self.local_code.strip():
+                    raise ValueError("本地材料模式必须提供代码/单测文件或目录")
+                if not self.local_doc.strip():
+                    raise ValueError("本地材料模式必须提供文档文件或目录")
         elif not self.code_mr.strip():
             raise ValueError("在线模式必须提供代码 MR 链接")
         elif self.task_type == "new_function" and not self.doc_mr.strip():
@@ -81,6 +90,11 @@ class TaskCard:
     @property
     def is_local(self) -> bool:
         return self.input_mode == "local"
+
+    @property
+    def uses_local_repositories(self) -> bool:
+        """本地材料是否由函数库名和分支自动获取。"""
+        return self.is_local and bool(self.local_branch.strip())
 
     @property
     def is_performance_optimization(self) -> bool:
@@ -117,6 +131,8 @@ class TaskCard:
     def code_repo_name(self) -> str:
         """项目路径最后一段，即本地克隆目录名（如 TyMathCore.jl）。"""
         if self.is_local:
+            if self.uses_local_repositories:
+                return self.local_library.strip()
             path = Path(self.local_code)
             return path.name if path.suffix else path.resolve().name
         return self.code_project.rsplit("/", 1)[-1]
@@ -124,6 +140,8 @@ class TaskCard:
     @property
     def doc_repo_name(self) -> str:
         if self.is_local:
+            if self.uses_local_repositories:
+                return config.DOCS_REPO_NAME
             return Path(self.local_doc).name
         return self.doc_project.rsplit("/", 1)[-1]
 

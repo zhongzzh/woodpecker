@@ -4,15 +4,19 @@ import tempfile
 import unittest
 from unittest.mock import MagicMock, patch
 
-from pipeline import analyze
+from pipeline import analyze, config
 from pipeline.taskcard import TaskCard
 from pipeline.web import (
+    _Job,
     _build_argv,
     _coverage_prompt_payload,
+    _apply_gitlab_action,
     _hidden_process_kwargs,
     _profile_api_key,
     _public_ai_config,
+    _public_gitlab_config,
     _resolve_local_materials,
+    _read_resolved_paths,
     _select_local_file,
     _service_is_running,
 )
@@ -57,6 +61,18 @@ class WebArgvTests(unittest.TestCase):
         })
         self.assertIn("--doc-mr", argv)
 
+    def test_document_html_build_is_opt_in(self):
+        payload = {
+            "name": "新增 ode89 函数",
+            "code_mr": "https://git.tongyuan.cc/a/b/-/merge_requests/1",
+            "doc_mr": "https://git.tongyuan.cc/a/docs/-/merge_requests/2",
+        }
+        self.assertNotIn("--build-doc-html", _build_argv(payload))
+        self.assertIn(
+            "--build-doc-html",
+            _build_argv({**payload, "build_doc_html": True}),
+        )
+
     def test_local_task_emits_only_local_material_arguments(self):
         argv = _build_argv({
             "input_mode": "local",
@@ -75,6 +91,7 @@ class WebArgvTests(unittest.TestCase):
         argv = _build_argv({
             "input_mode": "local",
             "name": "chromadapt函数",
+            "local_library": "TyImageProcessing",
             "local_code": r"C:\code",
             "local_doc": r"C:\docs",
         })
@@ -82,7 +99,77 @@ class WebArgvTests(unittest.TestCase):
         self.assertIn("--local-doc", argv)
         self.assertEqual(argv[argv.index("--local-code") + 1], r"C:\code")
         self.assertEqual(argv[argv.index("--local-doc") + 1], r"C:\docs")
+        self.assertEqual(
+            argv[argv.index("--local-library") + 1], "TyImageProcessing"
+        )
 
+    def test_local_repository_task_emits_library_and_shared_branch(self):
+        argv = _build_argv({
+            "input_mode": "local",
+            "name": "graydiffweight",
+            "local_library": "TyImageProcessing",
+            "local_branch": "pyh/add_graydiffweight",
+        })
+        self.assertIn("--local-library", argv)
+        self.assertIn("--local-branch", argv)
+        self.assertNotIn("--local-code", argv)
+        self.assertEqual(
+            argv[argv.index("--local-branch") + 1], "pyh/add_graydiffweight"
+        )
+
+    def test_local_repository_task_can_request_document_html_build(self):
+        argv = _build_argv({
+            "input_mode": "local",
+            "name": "graydiffweight",
+            "local_library": "TyImageProcessing",
+            "local_branch": "pyh/add_graydiffweight",
+            "build_doc_html": True,
+        })
+        self.assertIn("--build-doc-html", argv)
+
+
+class GitLabConfigWebTests(unittest.TestCase):
+    def setUp(self):
+        self.temp_dir = tempfile.TemporaryDirectory()
+        root = Path(self.temp_dir.name)
+        self.config_patch = patch.object(config, "GITLAB_CONFIG_FILE", root / "gitlab.json")
+        self.state_patch = patch.object(config, "PW_STATE_FILE", root / "state.json")
+        self.config_patch.start()
+        self.state_patch.start()
+
+    def tearDown(self):
+        self.state_patch.stop()
+        self.config_patch.stop()
+        self.temp_dir.cleanup()
+
+    def test_public_config_reports_login_state_without_exposing_state_content(self):
+        config.PW_STATE_FILE.write_text('{"cookies": []}', encoding="utf-8")
+        result = _public_gitlab_config()
+        self.assertTrue(result["login_state_exists"])
+        self.assertNotIn("cookies", result)
+
+    def test_test_action_saves_settings_and_checks_browser_connection(self):
+        with patch("pipeline.web.login.check_connection", return_value={
+            "url": "https://git.example.com/users/sign_in", "status": 200,
+        }) as check:
+            result = _apply_gitlab_action({
+                "action": "test", "host": "git.example.com",
+                "ssh_port": "222", "proxy": "127.0.0.1:7890",
+            })
+        self.assertIn("连接成功", result["message"])
+        check.assert_called_once_with("git.example.com", "http://127.0.0.1:7890")
+
+    def test_login_action_opens_login_and_refreshes_state_status(self):
+        def fake_login(_host, _proxy):
+            config.PW_STATE_FILE.write_text("{}", encoding="utf-8")
+
+        with patch("pipeline.web.login.login_gitlab", side_effect=fake_login) as log_in:
+            result = _apply_gitlab_action({
+                "action": "login", "host": "git.example.com",
+                "ssh_port": 222, "proxy": "",
+            })
+        self.assertTrue(result["login_state_exists"])
+        log_in.assert_called_once_with("git.example.com", None)
 
 class LocalPickerTests(unittest.TestCase):
     def test_code_and_doc_directory_kinds_open_directory_picker(self):
@@ -104,6 +191,43 @@ class LocalPickerTests(unittest.TestCase):
 
 
 class LocalMaterialResolutionTests(unittest.TestCase):
+    def test_job_status_reads_early_repository_material_paths(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_dir = root / "graydiffweight-task"
+            task_dir.mkdir()
+            value = {
+                "local_code": r"C:\code\test_graydiffweight.jl",
+                "local_doc": r"C:\docs\graydiffweight.md",
+                "local_code_files": [r"C:\code\test_graydiffweight.jl"],
+                "local_doc_files": [r"C:\docs\graydiffweight.md"],
+            }
+            (task_dir / config.LOCAL_PATHS_STATE_NAME).write_text(
+                json.dumps(value), encoding="utf-8"
+            )
+            job = _Job()
+            job.out_dir = str(task_dir)
+            with patch.object(config, "TASKS_DIR", root):
+                snapshot = job.snapshot()
+
+        self.assertEqual(snapshot["resolved_paths"], value)
+
+    def test_resolved_paths_fall_back_to_finished_task_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            task_dir = root / "graydiffweight-task"
+            task_dir.mkdir()
+            (task_dir / "task.json").write_text(json.dumps({
+                "local_code": r"C:\code\test_graydiffweight.jl",
+                "local_doc": r"C:\docs\graydiffweight.md",
+                "local_code_files": [],
+                "local_doc_files": [],
+            }), encoding="utf-8")
+            with patch.object(config, "TASKS_DIR", root):
+                resolved = _read_resolved_paths(str(task_dir))
+
+        self.assertEqual(resolved["local_doc"], r"C:\docs\graydiffweight.md")
+
     def test_parent_directories_return_preferred_paths_and_all_matches(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -159,8 +283,18 @@ class AiConfigWebTests(unittest.TestCase):
         self.assertEqual(public["active_profile_id"], profile_id)
         self.assertTrue(public["profiles"][0]["has_saved_key"])
         self.assertEqual(public["profiles"][0]["api_key_masked"], "••••••••-key")
+        self.assertEqual(public["profiles"][0]["timeout_seconds"], 1200)
         self.assertNotIn("super-secret-key", encoded)
         self.assertNotIn("api_key\"", json.dumps(public["profiles"][0]))
+
+    def test_public_config_exposes_each_profile_timeout(self):
+        analyze.save_ai_profile(
+            "", "慢速公益站", "https://slow.example", "saved-key", "model-a",
+            "openai", 1800,
+        )
+        public = _public_ai_config()
+        self.assertEqual(public["timeout_seconds"], 1800)
+        self.assertEqual(public["profiles"][0]["timeout_seconds"], 1800)
 
     def test_model_and_prompt_requests_can_reuse_selected_profile_key(self):
         profile_id = analyze.save_ai_profile(

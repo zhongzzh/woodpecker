@@ -68,13 +68,15 @@ GitLab 地址、SSH 端口和可选代理，先「测试连接」，再「打开
   工具会自动 URL 解码、拆分任务名与 MR、去除重复链接并回填表单。也可手动填写：
   新增函数填「任务名 + 代码 MR + 文档 MR」；性能优化填
   「任务名 + 代码 MR」，识别到“性能优化”后页面会自动隐藏文档 MR，
-  完成后页面直接看报告 / 下载 .md；历史任务下拉可回看。切换到“本地材料”后，
-  填写包含函数名的任务名称（如 `chromadapt函数`），并分别填写代码/单测路径和
-  函数文档路径。两个路径都可指向具体文件或各自的母目录；目录模式会递归查找文件名
-  严格包含函数名的 `.jl` 代码/单测和 `.md` 文档。允许命中
-  多个代码文件并全部用于分析，找不到任一类材料时会直接提示。性能报告可选，
-  直接粘贴原文，留空时明确跳过性能分析。点击开始后，母目录会自动解析并把首选代码、
-  文档的准确文件路径回填到对应输入框；其他匹配文件仍会全部用于本次分析。
+  完成后页面直接看报告 / 下载 .md；历史任务下拉可回看。切换到“本地材料”后有两种用法：
+  可以填写函数名（如 `graydiffweight`）、函数库名（如 `TyImageProcessing`）和共同的源分支
+  （如 `pyh/add_graydiffweight`），让工具自动同步仓库并定位材料；也可以保留源分支为空，
+  填写函数库名并沿用代码/单测路径与函数文档路径的文件或母目录选择方式。自动方式会先在
+  `%USERPROFILE%\Desktop\doc\syslab-docs-2.0` 切换并拉取该分支，再同步
+  `%USERPROFILE%\Desktop\doc` 下对应代码仓库（函数库名可省略 `.jl`）；定位完成后会将准确的
+  代码和文档路径自动回填到路径框。性能报告可选，
+  直接粘贴原文，留空时明确跳过性能分析。本地模式也可以勾选“编译并打开文档 HTML”，
+  定位文档后会自动识别帮助项目、执行编译并打开函数页面。
   本地服务使用隐藏模式运行，不会保留终端窗口；关闭最后一个 Woodpecker 页面后，
   服务会自动退出（刷新页面不会误关）。
   「⚙️ AI 设置」支持 **OpenAI 兼容协议**（`/v1/chat/completions`）与
@@ -86,21 +88,30 @@ GitLab 地址、SSH 端口和可选代理，先「测试连接」，再「打开
   不丢弃已经完成的分析结果。已保存 Key
   会显示安全掩码和末四位，并可单独更换，所有档案的明文 Key 都不会返回浏览器；
   “自定义试问”可使用表单当前配置发起真实请求。
+  每个公益站档案可分别设置 10～3600 秒的请求超时，模型列表、试问、覆盖分析和本地性能
+  报告分析都会使用当前档案的值；旧档案默认 1200 秒。中转站自身 nginx 返回的 HTTP 504
+  属于服务端网关超时，不能由本机超时值强制延长，但仍会按当前配置最多重试三次。
   AI 设置底部会显示覆盖分析实际使用的完整提示词，可编辑后单独保存，也可随时恢复项目默认版本；
   自定义内容仅保存在本机 `.coverage-prompt.md`，从下一次分析开始生效。
   本地粘贴的性能报告只判定当前任务函数，忽略报告中其他函数；总结邮件使用固定的
   “性能通过 / 性能首次不通过，二次通过 / 性能首次通过，二次不通过 / 性能不通过”结论。
   运行日志默认跟随最新内容，手动上滑后会暂停跟随，点击“已暂停”即可恢复。
+  在线新增函数任务在文档 MR 分支就位后，还会从 md 路径自动识别真实帮助项目，执行
+  `syslabHelpSourceCode\extension-build.bat .\projects\<项目名>`，然后定位
+  `dist\Help\<项目名>\...\<函数名>.html` 并请求默认浏览器打开。帮助项目名以文档实际所在
+  `projects` 子目录为准，例如 TyStatisticsCore.jl 的 tdfread 文档实际编译 `TyStatistics`。
 - **命令行**：
   `.venv\Scripts\python -m pipeline.run --name "新增 xxx 函数" --code-mr <URL> --doc-mr <URL>`
   或 `.venv\Scripts\python -m pipeline.run --name "xxx 函数性能优化" --code-mr <URL>`。
   本地材料使用
-  `.venv\Scripts\python -m pipeline.run --name "chromadapt函数" --local-code <代码文件或母目录> --local-doc <文档文件或母目录>`；
+  `.venv\Scripts\python -m pipeline.run --name "graydiffweight" --local-library TyImageProcessing --local-branch pyh/add_graydiffweight`；
   可加 `--perf-report-file <文本文件>` 分析另存的性能报告。
   （MR 页面读不了时可加 `--code-branch/--doc-branch` 手动指定分支；`--no-ai` 跳过 AI。）
 
-被测仓库默认缓存到当前用户的 `%LOCALAPPDATA%\woodpecker\repos`，不再绑定固定用户名。
-如需复用已有仓库目录，可设置环境变量 `WOODPECKER_CLONE_ROOT`。
+数学库代码仓库和文档仓库默认统一复用 `%USERPROFILE%\Desktop\doc` 下的现有版本。例如代码
+MR 属于 TyStatisticsCore.jl 时，先检查 `%USERPROFILE%\Desktop\doc\TyStatisticsCore.jl`，存在就
+直接 fetch、切换 MR 源分支并 pull；不存在才在该目录首次 clone。可用环境变量
+`WOODPECKER_CLONE_ROOT` 修改共享仓库根目录，或用 `WOODPECKER_DOCS_REPO` 单独指定文档仓库。
 
 > 源码方式无法在“完全没有 Python/Git”的电脑上做到真正零环境。若以后面向更多非技术用户分发，
 > 建议再增加 GitHub Releases：用 PyInstaller 打包 Python 程序；Chromium可首次联网下载，

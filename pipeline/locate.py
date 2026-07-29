@@ -5,11 +5,42 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
+from . import config
 from . import repo as repo_mod
 
 
 class LocateError(RuntimeError):
     pass
+
+
+def local_git_repo(path: Path | str, label: str) -> Path:
+    """校验约定位置确实是可供切分支的本地 Git 仓库。"""
+    repo = Path(path).expanduser().resolve()
+    if not repo.is_dir():
+        raise LocateError(f"{label}不存在：{repo}")
+    if not (repo / ".git").exists():
+        raise LocateError(f"{label}不是 Git 仓库：{repo}")
+    return repo
+
+
+def find_local_library_repo(library: str, root: Path | str | None = None) -> Path:
+    """在 Desktop/doc 约定根目录中按函数库名找到代码仓库。
+
+    页面允许填写 ``TyImageProcessing``，实际目录可为 ``TyImageProcessing.jl``。
+    这里只接受目录名，不接受任意路径，避免输入越出共享仓库根目录。
+    """
+    name = library.strip()
+    if not name or Path(name).name != name or name in (".", "..") or "/" in name or "\\" in name:
+        raise LocateError(f"函数库名称格式不正确：{library!r}")
+    repo_root = Path(root) if root is not None else config.CLONE_ROOT
+    candidates = [repo_root / name]
+    if not name.lower().endswith(".jl"):
+        candidates.append(repo_root / f"{name}.jl")
+    for candidate in candidates:
+        if candidate.is_dir():
+            return local_git_repo(candidate, f"函数库 {name}")
+    expected = " 或 ".join(str(path.resolve()) for path in candidates)
+    raise LocateError(f"未找到函数库 {name!r}，已检查：{expected}")
 
 
 def local_path(path_text: str, label: str, allow_directory: bool = False) -> Path:

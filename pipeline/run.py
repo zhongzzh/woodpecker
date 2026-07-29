@@ -11,8 +11,8 @@
       --code-mr https://git.tongyuan.cc/.../merge_requests/NNN
 
 本地材料用法：
-  python -m pipeline.run --name "polydiv函数" \
-      --local-code C:\\path\\to\\code --local-doc C:\\path\\to\\docs \
+  python -m pipeline.run --name "graydiffweight" \
+      --local-library TyImageProcessing --local-branch pyh/add_graydiffweight \
       [--perf-report-file C:\\path\\to\\performance.txt]
 
 步骤（docs/07 §1 管线）：
@@ -29,7 +29,7 @@ import sys
 from datetime import datetime
 from pathlib import Path
 
-from . import analyze, config, locate, mr, perf, repo
+from . import analyze, config, doc_html, locate, mr, perf, repo
 from .taskcard import TaskCard
 
 
@@ -79,15 +79,23 @@ def _summary_email(
     local_doc_files: list[Path] | None = None,
 ) -> str:
     """生成可直接复制的周提测总结邮件文本；版本号由测试人员手填。"""
-    library = card.func if card.is_local else card.code_repo_name.removesuffix(".jl")
+    library = (
+        card.local_library.removesuffix(".jl")
+        if card.is_local and card.local_library.strip()
+        else card.func if card.is_local else card.code_repo_name.removesuffix(".jl")
+    )
     functional_text = "功能验证通过" if functional_performed else "功能验证未进行"
     lines = [
         f"{card.name}，{functional_text}，"
         f"{_performance_email_text(perf_result, performance_performed)}，请补充自动化脚本",
     ]
     if card.is_local:
+        source_label = (
+            f"本地仓库分支 {card.local_branch} 自动定位"
+            if card.uses_local_repositories else "用户电脑本地文件"
+        )
         lines += [
-            "分析材料来自用户电脑本地文件：",
+            f"分析材料来自{source_label}：",
             "",
             "代码/单测：",
             *(str(path) for path in (local_code_files or [Path(card.local_code)])),
@@ -110,7 +118,7 @@ def _summary_email(
     return "\n".join(lines)
 
 
-def run(card: TaskCard, skip_ai: bool = False,
+def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
         doc_branch: str = "", code_branch: str = "",
         perf_report_text: str = "", log=_log) -> Path:
     _log = log  # 允许 Web 壳注入日志收集器；缺省打印到控制台
@@ -119,23 +127,48 @@ def run(card: TaskCard, skip_ai: bool = False,
     materials.mkdir(exist_ok=True)
     _log(f"任务: {card.name}（函数 {card.func}）")
     _log(f"产出目录: {out_dir}")
+    local_doc_compile_error = None
 
     # ---- 步骤 1/5 文档侧 --------------------------------------------------
     if card.is_local:
-        _log("[1/5] 根据函数名定位本地文档")
-        unit = locate.find_local_unit_test(card.local_code, card.func, log=lambda _msg: None)
-        doc_search_root = card.local_doc
+        if card.uses_local_repositories:
+            _log(f"[1/5] 同步文档仓库并定位 {card.func}.md")
+            docs_repo = locate.local_git_repo(config.DOCS_REPO_DIR, "文档仓库")
+            repo.prepare_branch(docs_repo, card.local_branch, log=_log)
+            doc_search_root = str(docs_repo)
+            doc_info = {"source_branch": card.local_branch, "perf_note": None}
+        else:
+            _log("[1/5] 根据函数名定位本地文档")
+            doc_search_root = card.local_doc
+            doc_info = {"source_branch": "本地文件", "perf_note": None}
         local_doc_files = locate.find_local_docs(doc_search_root, card.func, log=_log)
         doc_md = "\n\n".join(
             f"<!-- 本地文档：{path} -->\n"
             + path.read_text(encoding="utf-8", errors="replace")
             for path in local_doc_files
         )
-        doc_rel = local_doc_files[0].name
+        if card.uses_local_repositories:
+            doc_rel = local_doc_files[0].relative_to(docs_repo).as_posix()
+        else:
+            doc_rel = local_doc_files[0].name
+            if build_doc_html:
+                try:
+                    docs_repo = locate.local_git_repo(config.DOCS_REPO_DIR, "文档仓库")
+                    doc_rel = local_doc_files[0].relative_to(docs_repo).as_posix()
+                except (locate.LocateError, ValueError) as exc:
+                    local_doc_compile_error = (
+                        "手动选择的文档不在可编译文档仓库中："
+                        f"{local_doc_files[0]}（{exc}）"
+                    )
         for doc_path in local_doc_files:
             _snapshot_material(doc_path, materials)
-        doc_info = {"source_branch": "本地文件", "perf_note": None}
-        doc_source = "用户本地文件 " + "、".join(f"`{path}`" for path in local_doc_files)
+        if card.uses_local_repositories:
+            doc_source = (
+                f"本地 {config.DOCS_REPO_NAME}（分支 {card.local_branch}）"
+                + "、".join(f"`{path.relative_to(docs_repo).as_posix()}`" for path in local_doc_files)
+            )
+        else:
+            doc_source = "用户本地文件 " + "、".join(f"`{path}`" for path in local_doc_files)
     elif card.is_new_function:
         _log("[1/5] 文档 MR 取数")
         if doc_branch:
@@ -143,7 +176,9 @@ def run(card: TaskCard, skip_ai: bool = False,
             doc_info = {"source_branch": doc_branch, "perf_note": None}
         else:
             doc_info = mr.read_mr(card.doc_mr, log=_log)
-        docs_repo = repo.ensure_repo(card.doc_project, log=_log)
+        docs_repo = repo.ensure_repo(
+            card.doc_project, log=_log, local_path=config.DOCS_REPO_DIR
+        )
         repo.prepare_branch(docs_repo, doc_info["source_branch"], log=_log)
         doc_md_path = locate.find_doc_md(
             docs_repo, card.func, config.DOCS_DEFAULT_BASE, log=_log
@@ -156,7 +191,9 @@ def run(card: TaskCard, skip_ai: bool = False,
         )
     else:
         _log("[1/5] 本地既有文档取数（性能优化，无需文档 MR）")
-        docs_repo = repo.ensure_repo(config.DOCS_REPO_PROJECT, log=_log)
+        docs_repo = repo.ensure_repo(
+            config.DOCS_REPO_PROJECT, log=_log, local_path=config.DOCS_REPO_DIR
+        )
         repo.refresh_repo(docs_repo, log=_log)
         doc_material = locate.read_existing_doc_md(
             docs_repo, card.func, config.DOCS_DEFAULT_BASE, log=_log
@@ -167,13 +204,47 @@ def run(card: TaskCard, skip_ai: bool = False,
         (materials / f"{card.func}.md").write_text(doc_md, encoding="utf-8")
         doc_source = f"本地 {config.DOCS_REPO_NAME}（{doc_material['revision']}）`{doc_rel}`"
 
+    # 文档分支已经就位后，编译真实 md 所属的帮助项目并打开函数 HTML。
+    # 项目名来自 projects/<项目名>/...，不能直接照搬代码仓库名（例如
+    # TyStatisticsCore.jl 的帮助项目实际是 TyStatistics）。
+    doc_html_info = None
+    doc_html_error = local_doc_compile_error
+    if build_doc_html and (card.is_new_function or card.is_local) and not doc_html_error:
+        _log("  [文档预览] 编译 HTML")
+        try:
+            doc_html_info = doc_html.build_and_open(
+                docs_repo, doc_rel, card.func, log=_log
+            )
+        except doc_html.DocHtmlError as exc:
+            doc_html_error = str(exc).replace("\r", " ").replace("\n", " ").strip()
+            _log(f"  ⚠️ 文档 HTML 编译/打开失败，继续分析：{doc_html_error}")
+
     # ---- 步骤 2/5 代码侧：MR → 分支 → 单测 + 性能报告 --------------------
     if card.is_local:
-        _log("[2/5] 根据函数名定位本地代码/单测")
+        if card.uses_local_repositories:
+            _log(f"[2/5] 同步函数库 {card.local_library} 并定位代码/单测")
+            code_repo = locate.find_local_library_repo(card.local_library)
+            repo.prepare_branch(code_repo, card.local_branch, log=_log)
+            unit = locate.find_local_unit_test(str(code_repo), card.func, log=lambda _msg: None)
+            code_info = {"source_branch": card.local_branch, "perf_note": None}
+        else:
+            _log("[2/5] 根据函数名定位本地代码/单测")
+            unit = locate.find_local_unit_test(card.local_code, card.func, log=lambda _msg: None)
+            code_repo = unit["root"]
+            code_info = {"source_branch": "本地文件", "perf_note": None}
         _log(f"  本地代码/单测: {unit['main']}"
              + (f"（另找到相关文件 {len(unit['companions'])} 个）" if unit["companions"] else ""))
-        code_repo = unit["root"]
-        code_info = {"source_branch": "本地文件", "perf_note": None}
+        (out_dir / config.LOCAL_PATHS_STATE_NAME).write_text(
+            json.dumps({
+                "local_code": str(unit["main"]),
+                "local_doc": str(local_doc_files[0]),
+                "local_code_files": [
+                    str(path) for path in [unit["main"], *unit["companions"]]
+                ],
+                "local_doc_files": [str(path) for path in local_doc_files],
+            }, ensure_ascii=False),
+            encoding="utf-8",
+        )
         bench = None
     else:
         _log("[2/5] 代码 MR 取数")
@@ -326,6 +397,9 @@ def run(card: TaskCard, skip_ai: bool = False,
         f"> 单测：`{unit_rel}`"
         + (f"（伴随数据 {len(unit['companions'])} 个）" if unit["companions"] else ""),
         f"> benchmark：`{bench_rel}`" if bench_rel else "> benchmark：未定位到",
+        f"> HTML 预览：`{doc_html_info['html']}`"
+        if doc_html_info else
+        (f"> HTML 预览：编译失败（{doc_html_error}）" if doc_html_error else "> HTML 预览：未执行"),
         f"> 分析规则：{rule_text} ｜ "
         f"生成：{datetime.now():%Y-%m-%d %H:%M} ｜ 模型：{report_model or '—'}",
     ])
@@ -361,6 +435,8 @@ def run(card: TaskCard, skip_ai: bool = False,
         "local_doc": str(local_doc_files[0]) if card.is_local else None,
         "local_code_input": card.local_code if card.is_local else None,
         "local_doc_input": card.local_doc if card.is_local else None,
+        "local_library": card.local_library if card.is_local else None,
+        "local_branch": card.local_branch if card.is_local else None,
         "local_code_files": [str(path) for path in [unit["main"], *unit["companions"]]]
         if card.is_local else [],
         "local_doc_files": [str(path) for path in local_doc_files] if card.is_local else [],
@@ -368,6 +444,12 @@ def run(card: TaskCard, skip_ai: bool = False,
         "doc_md": doc_rel,
         "unit_test": unit_rel,
         "benchmark": bench_rel,
+        "doc_html_project": doc_html_info["project"] if doc_html_info else None,
+        "doc_html": doc_html_info["html"] if doc_html_info else None,
+        "doc_html_url": doc_html_info["url"] if doc_html_info else None,
+        "doc_html_requested": bool(build_doc_html),
+        "doc_html_browser_opened": doc_html_info["browser_opened"] if doc_html_info else False,
+        "doc_html_error": doc_html_error,
         "perf_note_heading": code_info["perf_note"]["heading"] if code_info["perf_note"] else None,
         "pasted_performance_report": card.is_local and bool(perf_report_text.strip()),
         "coverage_ai_status": coverage_ai_status,
@@ -380,6 +462,7 @@ def run(card: TaskCard, skip_ai: bool = False,
         "model": report_model,
         "generated_at": datetime.now().isoformat(timespec="seconds"),
     }, ensure_ascii=False, indent=2), encoding="utf-8")
+    (out_dir / config.LOCAL_PATHS_STATE_NAME).unlink(missing_ok=True)
 
     _log(f"完成 ✅ 报告: {report_path}")
     return report_path
@@ -400,28 +483,40 @@ def main() -> None:
     ap.add_argument("--local-code", default="",
                     help="代码/单测文件或母目录；填写后启用本地材料模式")
     ap.add_argument("--local-doc", default="",
-                    help="文档文件或母目录（本地材料模式必填）")
+                    help="兼容参数：文档文件或母目录")
+    ap.add_argument("--local-library", default="",
+                    help="本地材料的函数库名，如 TyImageProcessing")
+    ap.add_argument("--local-branch", default="",
+                    help="文档仓库和代码仓库共同使用的源分支")
     ap.add_argument("--perf-report-file", default="",
                     help="可选：用户复制保存的性能报告文本文件")
     ap.add_argument("--func", default="", help="函数名（缺省从任务名解析）")
     ap.add_argument("--no-ai", action="store_true", help="跳过 AI 覆盖分析（调试取数/性能用）")
+    ap.add_argument(
+        "--build-doc-html", action="store_true",
+        help="编译新增函数的帮助文档并在浏览器中打开",
+    )
     ap.add_argument("--doc-branch", default="",
                     help="人工指定文档源分支（降级模式：MR 页面读不了时用，03-A 预案）")
     ap.add_argument("--code-branch", default="",
                     help="人工指定代码源分支（降级模式，此时无性能报告）")
     args = ap.parse_args()
     try:
-        input_mode = "local" if args.local_code or args.local_doc else "remote"
+        input_mode = "local" if (
+            args.local_library or args.local_branch or args.local_code or args.local_doc
+        ) else "remote"
         card = TaskCard(
             name=args.name, code_mr=args.code_mr, doc_mr=args.doc_mr, func=args.func,
             input_mode=input_mode, local_code=args.local_code, local_doc=args.local_doc,
+            local_library=args.local_library, local_branch=args.local_branch,
         )
         perf_report_text = ""
         if args.perf_report_file:
             perf_path = locate.local_file(args.perf_report_file, "性能报告文件")
             perf_report_text = perf_path.read_text(encoding="utf-8", errors="replace")
         run(
-            card, skip_ai=args.no_ai, doc_branch=args.doc_branch,
+            card, skip_ai=args.no_ai, build_doc_html=args.build_doc_html,
+            doc_branch=args.doc_branch,
             code_branch=args.code_branch, perf_report_text=perf_report_text,
         )
     except (

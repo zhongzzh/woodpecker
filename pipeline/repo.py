@@ -37,14 +37,21 @@ def ssh_url(project_path: str) -> str:
     )
 
 
-def ensure_repo(project_path: str, log=print) -> Path:
-    """仓库已存在则直接用；不存在才 clone（D17）。返回本地路径。"""
+def ensure_repo(
+    project_path: str, log=print, local_path: Path | str | None = None
+) -> Path:
+    """仓库已存在则直接用；不存在才 clone（D17）。返回本地路径。
+
+    ``local_path`` 用于复用约定好的独立工作区，例如所有任务共享的文档仓库；
+    未指定时使用共享的 ``CLONE_ROOT/<项目名>`` 代码仓库工作区；会先复用
+    Desktop/doc 下已有版本，不存在才在同一位置首次 clone。
+    """
     name = project_path.rsplit("/", 1)[-1]
-    local = config.CLONE_ROOT / name
+    local = Path(local_path).expanduser() if local_path else config.CLONE_ROOT / name
     if (local / ".git").exists():
         log(f"  仓库已存在: {local}")
         return local
-    config.CLONE_ROOT.mkdir(parents=True, exist_ok=True)
+    local.parent.mkdir(parents=True, exist_ok=True)
     log(f"  克隆 {project_path} -> {local} （首次，可能较慢）")
     _git(None, "clone", ssh_url(project_path), str(local))
     return local

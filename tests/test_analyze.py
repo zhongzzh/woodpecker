@@ -43,6 +43,13 @@ class AiConfigTests(unittest.TestCase):
         self.assertEqual(masked, "••••••••3456")
         self.assertNotIn("secret", masked)
 
+    def test_timeout_validation_accepts_seconds_in_supported_range(self):
+        self.assertEqual(analyze.normalize_timeout_seconds("90"), 90)
+        with self.assertRaisesRegex(analyze.AnalyzeError, "10~3600"):
+            analyze.normalize_timeout_seconds("5")
+        with self.assertRaisesRegex(analyze.AnalyzeError, "整数秒"):
+            analyze.normalize_timeout_seconds("slow")
+
     def test_switching_protocol_does_not_reuse_saved_other_protocol_key(self):
         saved = {
             "protocol": "openai",
@@ -224,6 +231,22 @@ class AiProfileStoreTests(unittest.TestCase):
         store = analyze.load_ai_config_store()
         self.assertEqual(store["active_profile_id"], "")
         self.assertEqual({p["id"] for p in store["profiles"]}, {first, second})
+
+    def test_each_profile_keeps_its_own_request_timeout(self):
+        first = analyze.save_ai_profile(
+            "", "快站", "https://fast.example", "key-a", "model-a", "openai", 60
+        )
+        second = analyze.save_ai_profile(
+            "", "慢站", "https://slow.example", "key-b", "model-b", "openai", 1800
+        )
+        self.assertEqual(analyze.load_ai_config()["timeout_seconds"], 1800)
+
+        analyze.activate_ai_profile(first)
+        self.assertEqual(analyze.resolve_ai_config()["timeout_seconds"], 60)
+
+        store = analyze.load_ai_config_store()
+        timeouts = {p["name"]: p["timeout_seconds"] for p in store["profiles"]}
+        self.assertEqual(timeouts, {"快站": 60, "慢站": 1800})
 
     def test_deleting_active_profile_activates_first_remaining_profile(self):
         first = analyze.save_ai_profile(
