@@ -132,16 +132,36 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
     # ---- 步骤 1/5 文档侧 --------------------------------------------------
     if card.is_local:
         if card.uses_local_repositories:
-            _log(f"[1/5] 同步文档仓库并定位 {card.func}.md")
+            _log(f"[1/5] 优先定位本地 {card.func}.md，未找到时再同步文档分支")
             docs_repo = locate.local_git_repo(config.DOCS_REPO_DIR, "文档仓库")
-            repo.prepare_branch(docs_repo, card.local_branch, log=_log)
             doc_search_root = str(docs_repo)
-            doc_info = {"source_branch": card.local_branch, "perf_note": None}
+            try:
+                local_doc_files = locate.find_local_docs(
+                    doc_search_root, card.func, log=_log,
+                    preferred_project=card.local_library,
+                )
+            except locate.LocateError:
+                _log(
+                    f"  当前文档工作区未找到 {card.func}.md，"
+                    f"同步分支 {card.local_branch} 后重试"
+                )
+                repo.prepare_branch(docs_repo, card.local_branch, log=_log)
+                local_doc_files = locate.find_local_docs(
+                    doc_search_root, card.func, log=_log,
+                    preferred_project=card.local_library,
+                )
+                doc_branch = card.local_branch
+            else:
+                _log("  已命中本地文档，跳过文档仓库 fetch/checkout/pull")
+                doc_branch = "当前工作区（未切换）"
+            doc_info = {"source_branch": doc_branch, "perf_note": None}
         else:
             _log("[1/5] 根据函数名定位本地文档")
             doc_search_root = card.local_doc
             doc_info = {"source_branch": "本地文件", "perf_note": None}
-        local_doc_files = locate.find_local_docs(doc_search_root, card.func, log=_log)
+            local_doc_files = locate.find_local_docs(
+                doc_search_root, card.func, log=_log
+            )
         doc_md = "\n\n".join(
             f"<!-- 本地文档：{path} -->\n"
             + path.read_text(encoding="utf-8", errors="replace")
@@ -164,7 +184,7 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
             _snapshot_material(doc_path, materials)
         if card.uses_local_repositories:
             doc_source = (
-                f"本地 {config.DOCS_REPO_NAME}（分支 {card.local_branch}）"
+                f"本地 {config.DOCS_REPO_NAME}（{doc_branch}）"
                 + "、".join(f"`{path.relative_to(docs_repo).as_posix()}`" for path in local_doc_files)
             )
         else:
@@ -291,6 +311,7 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
     performance_performed = False
     performance_ai_status = "not_used"
     performance_ai_error = None
+    performance_ai_response_file = None
     if card.is_local:
         pasted = perf_report_text.strip()
         if pasted:
@@ -306,15 +327,40 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
             else:
                 performance_performed = True
                 try:
-                    perf_md = analyze.pasted_performance_analysis(
+                    ai_perf_md = analyze.pasted_performance_analysis(
                         card.func, pasted, card.task_type, log=_log
                     )
-                    performance_ai_status = "completed"
-                    _log("  用户粘贴的性能报告分析完成")
+                    ai_response_path = materials / "性能分析-AI原始返回.md"
+                    ai_response_path.write_text(ai_perf_md, encoding="utf-8")
+                    performance_ai_response_file = (
+                        ai_response_path.relative_to(out_dir).as_posix()
+                    )
+                    verdict = analyze.performance_verdict_from_markdown(ai_perf_md)
                     perf_result = {
                         "mode": "pasted",
-                        "verdict": analyze.performance_verdict_from_markdown(perf_md),
+                        "verdict": verdict,
                     }
+                    if verdict:
+                        perf_md = ai_perf_md
+                        performance_ai_status = "completed"
+                        _log("  用户粘贴的性能报告分析完成")
+                    else:
+                        performance_ai_status = "unparsed"
+                        performance_ai_error = (
+                            "AI 已返回性能分析，但未包含可识别的四态结论"
+                        )
+                        perf_md = (
+                            "### 用户粘贴的性能报告分析\n\n"
+                            "> ⚠️ **AI 已返回分析，但结论格式无法识别**\n>\n"
+                            "> 下方完整保留 AI 原始返回，便于调整性能提示词。"
+                            "本次不据此生成性能通过/不通过结论。\n\n"
+                            "#### AI 原始返回（未改写）\n\n"
+                            f"{ai_perf_md}"
+                        )
+                        _log(
+                            "  ⚠️ AI 已返回性能分析，但四态结论无法解析；"
+                            "原始返回已写入报告和材料快照"
+                        )
                 except analyze.AnalyzeError as exc:
                     performance_ai_status = "failed"
                     performance_ai_error = str(exc).replace("\r", " ").replace("\n", " ").strip()
@@ -408,7 +454,7 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
         [unit["main"], *unit["companions"]] if card.is_local else None,
         local_doc_files if card.is_local else None,
     )
-    if card.is_local and performance_ai_status == "completed":
+    if card.is_local and performance_ai_status in ("completed", "unparsed"):
         performance_heading = "## 二、性能测试判定（AI，仅当前函数）"
     elif card.is_local:
         performance_heading = "## 二、性能测试判定"
@@ -456,6 +502,7 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
         "coverage_ai_error": coverage_ai_error,
         "performance_ai_status": performance_ai_status,
         "performance_ai_error": performance_ai_error,
+        "performance_ai_response_file": performance_ai_response_file,
         "performance_verdict": _performance_email_text(
             perf_result, performance_performed
         ),

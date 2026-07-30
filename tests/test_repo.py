@@ -1,5 +1,6 @@
 import tempfile
 import unittest
+from subprocess import CompletedProcess
 from pathlib import Path
 from unittest.mock import patch
 
@@ -61,6 +62,62 @@ class EnsureRepoTests(unittest.TestCase):
                 repo.ssh_url("syslab/syslab-docs-2.0"),
                 str(target),
             )
+
+
+class PrepareBranchTests(unittest.TestCase):
+    def test_missing_branch_does_not_stash_dirty_worktree(self):
+        calls = []
+
+        def fake_git(_repo, *args, check=True):
+            calls.append(args)
+            returncode = 1 if args[0] == "show-ref" else 0
+            return CompletedProcess(["git", *args], returncode, "", "")
+
+        with patch("pipeline.repo._git", side_effect=fake_git):
+            with self.assertRaisesRegex(
+                repo.GitError, "本地和 origin 均不存在该分支"
+            ):
+                repo.prepare_branch(
+                    Path("example"), "lzq/add_cmunique",
+                    log=lambda _message: None,
+                )
+
+        self.assertFalse(any(args[0] == "stash" for args in calls))
+        self.assertFalse(any(args[0] == "checkout" for args in calls))
+
+    def test_checkout_blocked_by_changes_stashes_and_retries(self):
+        calls = []
+        checkout_count = 0
+
+        def fake_git(_repo, *args, check=True):
+            nonlocal checkout_count
+            calls.append(args)
+            if args[0] == "show-ref":
+                returncode = 0 if args[-1].startswith("refs/heads/") else 1
+                return CompletedProcess(["git", *args], returncode, "", "")
+            if args[:2] == ("status", "--porcelain"):
+                return CompletedProcess(["git", *args], 0, " M local.md\n", "")
+            if args[0] == "checkout":
+                checkout_count += 1
+                if checkout_count == 1:
+                    return CompletedProcess(
+                        ["git", *args], 1, "",
+                        "Your local changes would be overwritten by checkout. "
+                        "Please commit your changes or stash them before you "
+                        "switch branches.",
+                    )
+            if args[0] == "log":
+                return CompletedProcess(["git", *args], 0, "abc123 test\n", "")
+            return CompletedProcess(["git", *args], 0, "", "")
+
+        with patch("pipeline.repo._git", side_effect=fake_git):
+            result = repo.prepare_branch(
+                Path("example"), "existing", log=lambda _message: None
+            )
+
+        self.assertTrue(result["stashed"])
+        self.assertEqual(checkout_count, 2)
+        self.assertTrue(any(args[0] == "stash" for args in calls))
 
 
 if __name__ == "__main__":

@@ -95,14 +95,41 @@ def prepare_branch(repo: Path, branch: str, log=print) -> dict:
         # 内网不通等场景：本地已有该分支时仍可继续（数据可能略旧，日志明示）
         log("  ⚠️ git fetch 失败（内网不通？），尝试直接用本地已有分支")
 
+    local_ref = f"refs/heads/{branch}"
+    remote_ref = f"refs/remotes/origin/{branch}"
+    local_exists = _git(
+        repo, "show-ref", "--verify", "--quiet", local_ref, check=False
+    ).returncode == 0
+    remote_exists = _git(
+        repo, "show-ref", "--verify", "--quiet", remote_ref, check=False
+    ).returncode == 0
+    if not local_exists and not remote_exists:
+        raise GitError(f"切换分支 {branch} 失败：本地和 origin 均不存在该分支")
+
+    def checkout_branch() -> subprocess.CompletedProcess:
+        local_now_exists = _git(
+            repo, "show-ref", "--verify", "--quiet", local_ref, check=False
+        ).returncode == 0
+        if local_now_exists:
+            return _git(repo, "checkout", branch, check=False)
+        return _git(
+            repo, "checkout", "--track", "-b", branch, f"origin/{branch}",
+            check=False,
+        )
+
     status = _git(repo, "status", "--porcelain").stdout.strip()
-    checkout = _git(repo, "checkout", branch, check=False)
+    checkout = checkout_branch()
     if checkout.returncode != 0:
-        if status:
+        checkout_error = f"{checkout.stdout}\n{checkout.stderr}".lower()
+        blocked_by_changes = (
+            "would be overwritten by checkout" in checkout_error
+            or "stash them before you switch branches" in checkout_error
+        )
+        if status and blocked_by_changes:
             log("  工作区有未提交改动，git stash 暂存（不会丢失，可用 git stash pop 还原）")
             _git(repo, "stash", "push", "-m", f"woodpecker暂存: 切换到 {branch} 前")
             record["stashed"] = True
-            checkout = _git(repo, "checkout", branch, check=False)
+            checkout = checkout_branch()
         if checkout.returncode != 0:
             raise GitError(f"切换分支 {branch} 失败:\n{checkout.stderr.strip()}")
 

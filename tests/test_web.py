@@ -1,4 +1,5 @@
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
@@ -9,16 +10,20 @@ from pipeline.taskcard import TaskCard
 from pipeline.web import (
     _Job,
     _build_argv,
+    _calculate_runtime_version,
     _coverage_prompt_payload,
     _apply_gitlab_action,
     _hidden_process_kwargs,
+    _list_tasks,
     _profile_api_key,
     _public_ai_config,
     _public_gitlab_config,
+    _read_index_html,
     _resolve_local_materials,
     _read_resolved_paths,
     _select_local_file,
     _service_is_running,
+    _should_reuse_running_service,
 )
 
 
@@ -37,6 +42,103 @@ class WebArgvTests(unittest.TestCase):
         self.assertEqual(payload, {
             "prompt": "规则正文", "customized": True, "characters": 4,
         })
+
+    def test_index_html_is_reloaded_instead_of_cached_at_process_start(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            static_dir = Path(tmp)
+            index = static_dir / "index.html"
+            with patch("pipeline.web.STATIC_DIR", static_dir):
+                index.write_bytes(b"first")
+                self.assertEqual(_read_index_html(), b"first")
+                index.write_bytes(b"second")
+                self.assertEqual(_read_index_html(), b"second")
+
+    def test_runtime_version_changes_with_source_content(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = root / "web.py"
+            source.write_text("first", encoding="utf-8")
+            first = _calculate_runtime_version(root)
+            source.write_text("second", encoding="utf-8")
+            second = _calculate_runtime_version(root)
+
+        self.assertNotEqual(first, second)
+
+    @patch("pipeline.web._service_runtime_info")
+    def test_same_runtime_version_reuses_existing_service(self, runtime_info):
+        from pipeline import web
+
+        runtime_info.return_value = {
+            "service": "woodpecker",
+            "version": web.RUNTIME_VERSION,
+            "project_root": str(config.PROJECT_ROOT.resolve()),
+            "running": False,
+        }
+        with patch("pipeline.web._request_service_shutdown") as shutdown:
+            self.assertTrue(_should_reuse_running_service())
+        shutdown.assert_not_called()
+
+    @patch("pipeline.web._wait_for_service_exit", return_value=True)
+    @patch("pipeline.web._request_service_shutdown", return_value=True)
+    @patch("pipeline.web._service_runtime_info")
+    def test_idle_stale_service_is_replaced(self, runtime_info, shutdown, wait):
+        runtime_info.return_value = {
+            "service": "woodpecker",
+            "version": "stale-version",
+            "project_root": str(config.PROJECT_ROOT.resolve()),
+            "running": False,
+        }
+
+        self.assertFalse(_should_reuse_running_service())
+
+        shutdown.assert_called_once_with()
+        wait.assert_called_once_with()
+
+    @patch("pipeline.web._service_runtime_info")
+    def test_running_stale_service_is_preserved(self, runtime_info):
+        runtime_info.return_value = {
+            "service": "woodpecker",
+            "version": "stale-version",
+            "project_root": str(config.PROJECT_ROOT.resolve()),
+            "running": True,
+        }
+        with patch("pipeline.web._request_service_shutdown") as shutdown:
+            self.assertTrue(
+                _should_reuse_running_service(log=lambda _message: None)
+            )
+        shutdown.assert_not_called()
+
+    @patch("pipeline.web._wait_for_service_exit", return_value=True)
+    @patch("pipeline.web._stop_legacy_service", return_value=True)
+    @patch("pipeline.web._legacy_service_status")
+    @patch("pipeline.web._service_runtime_info", return_value=None)
+    def test_idle_legacy_service_without_version_api_is_replaced(
+        self, _runtime_info, legacy_status, stop_legacy, wait
+    ):
+        legacy_status.return_value = {
+            "running": False, "stopped": False, "log": [], "error": None,
+            "report_dir": None,
+        }
+
+        self.assertFalse(_should_reuse_running_service())
+
+        stop_legacy.assert_called_once_with()
+        wait.assert_called_once_with()
+
+    @patch("pipeline.web._legacy_service_status")
+    @patch("pipeline.web._service_runtime_info", return_value=None)
+    def test_running_legacy_service_without_version_api_is_preserved(
+        self, _runtime_info, legacy_status
+    ):
+        legacy_status.return_value = {
+            "running": True, "stopped": False, "log": ["分析中"],
+            "error": None, "report_dir": None,
+        }
+        with patch("pipeline.web._stop_legacy_service") as stop_legacy:
+            self.assertTrue(
+                _should_reuse_running_service(log=lambda _message: None)
+            )
+        stop_legacy.assert_not_called()
 
     @patch("pipeline.web.socket.create_connection")
     def test_existing_service_is_detected_before_binding(self, connect):
@@ -128,6 +230,30 @@ class WebArgvTests(unittest.TestCase):
         self.assertIn("--build-doc-html", argv)
 
 
+class TaskHistoryTests(unittest.TestCase):
+    def test_reports_are_sorted_by_generation_time_instead_of_function_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            older = root / "zeta-20260730-090000"
+            newer = root / "alpha-20260730-100000"
+            older.mkdir()
+            newer.mkdir()
+            older_report = older / "分析报告.md"
+            newer_report = newer / "分析报告.md"
+            older_report.write_text("older", encoding="utf-8")
+            newer_report.write_text("newer", encoding="utf-8")
+            os.utime(older_report, (1_700_000_000, 1_700_000_000))
+            os.utime(newer_report, (1_700_000_100, 1_700_000_100))
+
+            with patch.object(config, "TASKS_DIR", root):
+                items = _list_tasks()
+
+        self.assertEqual(
+            [item["dir"] for item in items],
+            ["alpha-20260730-100000", "zeta-20260730-090000"],
+        )
+
+
 class GitLabConfigWebTests(unittest.TestCase):
     def setUp(self):
         self.temp_dir = tempfile.TemporaryDirectory()
@@ -175,6 +301,7 @@ class LocalPickerTests(unittest.TestCase):
     def test_code_and_doc_directory_kinds_open_directory_picker(self):
         root = MagicMock()
         with (
+            patch("pipeline.web.enable_high_dpi") as enable_dpi,
             patch("tkinter.Tk", return_value=root),
             patch(
                 "tkinter.filedialog.askdirectory",
@@ -186,6 +313,7 @@ class LocalPickerTests(unittest.TestCase):
 
         self.assertEqual(code, r"C:\code")
         self.assertEqual(doc, r"C:\docs")
+        self.assertEqual(enable_dpi.call_count, 2)
         self.assertIn("代码/单测母目录", choose.call_args_list[0].kwargs["title"])
         self.assertIn("函数文档母目录", choose.call_args_list[1].kwargs["title"])
 

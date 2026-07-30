@@ -13,6 +13,8 @@ import sys
 import threading
 from pathlib import Path
 
+from .windows_dpi import enable_high_dpi, scaled_tk_window_size
+
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 VENV_PYTHONW = PROJECT_ROOT / ".venv" / "Scripts" / "pythonw.exe"
@@ -40,6 +42,8 @@ def _service_command() -> list[str]:
 
 
 def main() -> None:
+    # DPI awareness must be set before Tk creates its first native window.
+    enable_high_dpi()
     try:
         import tkinter as tk
         from tkinter import messagebox, ttk
@@ -48,7 +52,8 @@ def main() -> None:
 
     root = tk.Tk()
     root.title("Woodpecker")
-    root.geometry("560x480")
+    window_width, window_height = scaled_tk_window_size(root, 560, 480)
+    root.geometry(f"{window_width}x{window_height}")
     root.resizable(False, False)
     root.configure(bg="#f4f6f8")
 

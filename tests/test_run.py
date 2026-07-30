@@ -170,13 +170,57 @@ class LocalMaterialPipelineTests(unittest.TestCase):
                 docs_repo.resolve(), doc_relative, "graydiffweight",
                 log=ANY,
             )
-            self.assertEqual(prepare.call_count, 2)
+            prepare.assert_called_once_with(
+                code_repo.resolve(), "pyh/add_graydiffweight", log=ANY,
+            )
             task = json.loads(
                 (report_path.parent / "task.json").read_text(encoding="utf-8")
             )
             self.assertTrue(task["doc_html_requested"])
             self.assertEqual(task["doc_html_project"], "TyImageProcessing")
             self.assertEqual(task["doc_md"], doc_relative)
+
+    def test_local_repository_syncs_document_branch_only_after_local_miss(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            docs_repo = root / config.DOCS_REPO_NAME
+            code_repo = root / "TyImageProcessing.jl"
+            doc_file = (
+                docs_repo / "syslabHelpSourceCode" / "projects"
+                / "TyImageProcessing" / "Doc" / "sample.md"
+            )
+            test_file = code_repo / "test" / "test_sample.jl"
+            for repository in (docs_repo, code_repo):
+                (repository / ".git").mkdir(parents=True)
+            test_file.parent.mkdir(parents=True)
+            test_file.write_text("@test true", encoding="utf-8")
+            prepared_repositories = []
+
+            def fake_prepare(repository, branch, log=print):
+                prepared_repositories.append(repository)
+                if repository == docs_repo.resolve():
+                    doc_file.parent.mkdir(parents=True)
+                    doc_file.write_text("# sample", encoding="utf-8")
+                return {}
+
+            card = TaskCard(
+                name="sample", input_mode="local",
+                local_library="TyImageProcessing",
+                local_branch="dev/add_sample",
+            )
+            messages = []
+            with (
+                patch.object(config, "TASKS_DIR", root / "tasks"),
+                patch.object(config, "DOCS_REPO_DIR", docs_repo),
+                patch.object(config, "CLONE_ROOT", root),
+                patch("pipeline.run.repo.prepare_branch", side_effect=fake_prepare),
+            ):
+                run(card, skip_ai=True, log=messages.append)
+
+            self.assertEqual(
+                prepared_repositories, [docs_repo.resolve(), code_repo.resolve()]
+            )
+            self.assertTrue(any("未找到 sample.md" in msg for msg in messages))
 
     def test_local_pipeline_resolves_separate_parent_directories(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -291,6 +335,49 @@ class LocalMaterialPipelineTests(unittest.TestCase):
             self.assertTrue(
                 (report_path.parent / "materials" / "性能报告-用户粘贴.txt").exists()
             )
+            self.assertTrue(
+                (report_path.parent / "materials" / "性能分析-AI原始返回.md").exists()
+            )
+
+    def test_unparsed_performance_ai_response_is_preserved_for_diagnostics(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            unit_file = root / "sample.jl"
+            doc_file = root / "sample.md"
+            unit_file.write_text("@test true", encoding="utf-8")
+            doc_file.write_text("# sample", encoding="utf-8")
+            card = TaskCard(
+                name="检查本地材料", input_mode="local",
+                local_code=str(unit_file), local_doc=str(doc_file),
+            )
+            ai_response = "#### 综合结论\n\n整体性能看起来可以"
+
+            with (
+                patch.object(config, "TASKS_DIR", root / "tasks"),
+                patch(
+                    "pipeline.run.analyze.coverage_analysis",
+                    return_value="覆盖分析完成",
+                ),
+                patch(
+                    "pipeline.run.analyze.pasted_performance_analysis",
+                    return_value=ai_response,
+                ),
+            ):
+                report_path = run(
+                    card, perf_report_text="性能报告原文",
+                    log=lambda _message: None,
+                )
+
+            report = report_path.read_text(encoding="utf-8")
+            task = json.loads(
+                (report_path.parent / "task.json").read_text(encoding="utf-8")
+            )
+            response_file = report_path.parent / task["performance_ai_response_file"]
+            self.assertIn("AI 原始返回（未改写）", report)
+            self.assertIn(ai_response, report)
+            self.assertIn("性能测试结论无法判定", report)
+            self.assertEqual(task["performance_ai_status"], "unparsed")
+            self.assertEqual(response_file.read_text(encoding="utf-8"), ai_response)
 
     def test_performance_ai_failure_keeps_completed_coverage_and_writes_report(self):
         with tempfile.TemporaryDirectory() as tmp:

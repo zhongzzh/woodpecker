@@ -126,10 +126,35 @@ def find_local_unit_test(path_text: str, func: str, log=print) -> dict:
     return {"main": main, "companions": companions, "root": root}
 
 
-def find_local_docs(path_text: str, func: str, log=print) -> list[Path]:
-    """从用户指定的文件或母目录中查找函数文档，允许命中多个。"""
+def find_local_docs(
+    path_text: str, func: str, log=print, preferred_project: str = ""
+) -> list[Path]:
+    """从用户指定的文件或母目录中查找函数文档。
+
+    文档仓库中可能有多个项目保存同名函数文档。仓库自动定位模式可传入
+    ``preferred_project``，优先保留 ``projects/<项目名>`` 下的命中；手动路径
+    模式仍保留全部命中。
+    """
     source = local_path(path_text, "本地文档路径", allow_directory=True)
     matches, _root = _local_matches(source, func, ".md", "本地文档")
+    project = preferred_project.strip().removesuffix(".jl")
+    if project and len(matches) > 1:
+        project_matches = []
+        for path in matches:
+            parts = path.parts
+            if any(
+                part.lower() == "projects"
+                and index + 1 < len(parts)
+                and parts[index + 1].lower() == project.lower()
+                for index, part in enumerate(parts)
+            ):
+                project_matches.append(path)
+        if project_matches:
+            log(
+                f"  同名文档共 {len(matches)} 个，按函数库选择 "
+                f"projects/{project} 下的 {len(project_matches)} 个"
+            )
+            matches = project_matches
     matches.sort(key=lambda path: (0 if path.stem == func else 1, str(path)))
     log(
         f"  本地文档: {matches[0]}"

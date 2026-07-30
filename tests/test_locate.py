@@ -114,6 +114,28 @@ class LocalMaterialLocateTests(unittest.TestCase):
 
         self.assertEqual(result, [exact, extra])
 
+    def test_repository_docs_prefer_matching_help_project(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            preferred = (
+                root / "syslabHelpSourceCode" / "projects" / "TyImageProcessing"
+                / "Doc" / "cmunique.md"
+            )
+            other = (
+                root / "syslabHelpSourceCode" / "projects" / "TyImages"
+                / "Doc" / "cmunique.md"
+            )
+            for path in (preferred, other):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("# cmunique", encoding="utf-8")
+
+            result = locate.find_local_docs(
+                str(root), "cmunique", log=lambda _message: None,
+                preferred_project="TyImageProcessing.jl",
+            )
+
+        self.assertEqual(result, [preferred])
+
     def test_directory_mode_reports_missing_function_material(self):
         with tempfile.TemporaryDirectory() as tmp:
             with self.assertRaisesRegex(locate.LocateError, "完整函数名 'chromadapt'"):

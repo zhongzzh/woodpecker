@@ -28,7 +28,7 @@ class TaskCard:
     local_code: str = ""        # 代码/单测文件或其母目录
     local_doc: str = ""         # 文档文件或其母目录
     local_library: str = ""     # 本地仓库模式的函数库名，如 TyImageProcessing
-    local_branch: str = ""      # 文档仓库与代码仓库共同切换到的源分支
+    local_branch: str = ""      # 代码源分支；本地无函数文档时也作为文档同步分支
     task_type: str = field(init=False)
 
     def __post_init__(self) -> None:

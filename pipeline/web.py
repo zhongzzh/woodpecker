@@ -12,8 +12,12 @@ stdout 逐行收进日志，「中止」= 强杀子进程树（连带 playwright
   POST /api/parse-input      {text} → 从整段粘贴内容提取任务名与 MR
   POST /api/stop             中止当前任务（杀子进程树）
   GET  /api/status           当前任务进度（前端 1s 轮询）
+  GET  /api/runtime          当前服务代码版本、项目路径与任务状态
+  POST /api/shutdown         空闲时退出旧服务，供新版启动进程接管端口
   GET  /api/tasks            历史任务列表（tasks/ 下有 分析报告.md 的目录）
   GET  /api/report?dir=xxx   某次任务的报告原文（md）
+  GET  /api/code-chat?dir=xx 某次任务的补测代码优化对话
+  POST /api/code-chat        发送消息或清空当前任务对话
   GET  /api/ai-config        AI 设置（OpenAI/Anthropic 双协议；POST 同路径保存）
   GET  /api/analysis-prompt  当前覆盖分析提示词（POST 保存或恢复默认）
   POST /api/ai-models        按所选协议获取端点模型清单
@@ -23,6 +27,7 @@ stdout 逐行收进日志，「中止」= 强杀子进程树（连带 playwright
 from __future__ import annotations
 
 import atexit
+import hashlib
 import json
 import os
 import socket
@@ -33,17 +38,46 @@ import tempfile
 import threading
 import time
 import webbrowser
+from http.client import HTTPConnection
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import analyze, config, locate, login, paste
+from . import analyze, code_chat, config, locate, login, paste
 from .taskcard import TaskCard
+from .windows_dpi import enable_high_dpi
 
 HOST, PORT = "127.0.0.1", 8737
 STATIC_DIR = config.PROJECT_ROOT / "pipeline" / "static"
-INDEX_HTML = (STATIC_DIR / "index.html").read_bytes()
 REPORT_NAME = "分析报告.md"
+
+
+def _calculate_runtime_version(source_dir: Path | None = None) -> str:
+    """计算服务代码与静态资源指纹；缓存文件和编译产物不参与。"""
+    root = (source_dir or Path(__file__).resolve().parent).resolve()
+    digest = hashlib.sha256()
+    candidates = sorted(
+        path for path in root.rglob("*")
+        if path.is_file()
+        and "__pycache__" not in path.parts
+        and path.suffix.lower() not in (".pyc", ".pyo")
+    )
+    for path in candidates:
+        relative = path.relative_to(root).as_posix().encode("utf-8")
+        content = path.read_bytes()
+        digest.update(len(relative).to_bytes(4, "big"))
+        digest.update(relative)
+        digest.update(len(content).to_bytes(8, "big"))
+        digest.update(content)
+    return digest.hexdigest()[:20]
+
+
+RUNTIME_VERSION = _calculate_runtime_version()
+
+
+def _read_index_html() -> bytes:
+    """每次请求读取页面，避免常驻服务继续返回启动时缓存的旧界面。"""
+    return (STATIC_DIR / "index.html").read_bytes()
 
 
 class _Job:
@@ -211,6 +245,147 @@ def _service_is_running() -> bool:
         return False
 
 
+def _service_runtime_info() -> dict | None:
+    """读取现有 Woodpecker 服务的启动版本与任务状态。"""
+    connection = HTTPConnection(HOST, PORT, timeout=0.6)
+    try:
+        connection.request("GET", "/api/runtime")
+        response = connection.getresponse()
+        if response.status != 200:
+            response.read()
+            return None
+        value = json.loads(response.read().decode("utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    finally:
+        connection.close()
+    if not isinstance(value, dict) or value.get("service") != "woodpecker":
+        return None
+    return value
+
+
+def _legacy_service_status() -> dict | None:
+    """识别尚未提供 /api/runtime 的旧版 Woodpecker。"""
+    connection = HTTPConnection(HOST, PORT, timeout=0.6)
+    try:
+        connection.request("GET", "/api/status")
+        response = connection.getresponse()
+        if response.status != 200:
+            response.read()
+            return None
+        value = json.loads(response.read().decode("utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return None
+    finally:
+        connection.close()
+    required = {"running", "stopped", "log", "error", "report_dir"}
+    if not isinstance(value, dict) or not required.issubset(value):
+        return None
+    return value
+
+
+def _legacy_service_process() -> dict | None:
+    """在 Windows 上定位默认端口的进程，并验证它属于当前项目。"""
+    if sys.platform != "win32":
+        return None
+    script = (
+        f"$c=Get-NetTCPConnection -LocalPort {PORT} -State Listen "
+        "-ErrorAction Stop|Select-Object -First 1;"
+        "$p=Get-CimInstance Win32_Process -Filter "
+        "\"ProcessId = $($c.OwningProcess)\";"
+        "[PSCustomObject]@{pid=$p.ProcessId;command_line=$p.CommandLine;"
+        "executable_path=$p.ExecutablePath}|ConvertTo-Json -Compress"
+    )
+    result = subprocess.run(
+        ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+        capture_output=True, text=True, encoding="utf-8", errors="replace",
+        **_hidden_process_kwargs(),
+    )
+    if result.returncode != 0:
+        return None
+    try:
+        value = json.loads(result.stdout.strip())
+    except json.JSONDecodeError:
+        return None
+    command_line = str(value.get("command_line", ""))
+    normalized_command = command_line.replace("/", "\\").lower()
+    normalized_root = str(config.PROJECT_ROOT.resolve()).replace("/", "\\").lower()
+    if normalized_root not in normalized_command or "pipeline.web" not in command_line:
+        return None
+    try:
+        pid = int(value["pid"])
+    except (KeyError, TypeError, ValueError):
+        return None
+    if pid <= 0 or pid == os.getpid():
+        return None
+    return {**value, "pid": pid}
+
+
+def _stop_legacy_service() -> bool:
+    """只结束已验证为当前项目且处于空闲状态的旧版服务。"""
+    process = _legacy_service_process()
+    if process is None:
+        return False
+    result = subprocess.run(
+        ["taskkill", "/F", "/T", "/PID", str(process["pid"])],
+        capture_output=True, **_hidden_process_kwargs(),
+    )
+    return result.returncode == 0
+
+
+def _request_service_shutdown() -> bool:
+    """请求空闲旧实例正常退出；运行中的分析由旧实例拒绝。"""
+    connection = HTTPConnection(HOST, PORT, timeout=1.0)
+    try:
+        connection.request(
+            "POST", "/api/shutdown", body=b"{}",
+            headers={"Content-Type": "application/json"},
+        )
+        response = connection.getresponse()
+        value = json.loads(response.read().decode("utf-8"))
+        return response.status == 200 and bool(value.get("ok"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return False
+    finally:
+        connection.close()
+
+
+def _wait_for_service_exit(timeout: float = 5.0) -> bool:
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        if not _service_is_running():
+            return True
+        time.sleep(0.05)
+    return not _service_is_running()
+
+
+def _should_reuse_running_service(log=print) -> bool:
+    """同版本直接复用；旧版本空闲时退出并由当前进程接管。"""
+    info = _service_runtime_info()
+    if info is None:
+        legacy = _legacy_service_status()
+        if legacy is None:
+            return _service_is_running()
+        if legacy.get("running"):
+            log("检测到旧版服务仍在执行分析，本次保留现有任务")
+            return True
+        if not _stop_legacy_service():
+            return True
+        return not _wait_for_service_exit()
+    same_project = info.get("project_root") == str(config.PROJECT_ROOT.resolve())
+    if same_project and info.get("version") == RUNTIME_VERSION:
+        return True
+    if info.get("running"):
+        log("检测到旧版本服务仍在执行分析，本次保留现有任务")
+        return True
+    if not _request_service_shutdown():
+        return _service_is_running()
+    stopped = _wait_for_service_exit()
+    if not stopped:
+        log("旧版本服务未能在限定时间内退出，本次继续复用")
+    return not stopped
+
+
 def _select_local_file(kind: str) -> str:
     """用系统文件对话框选择材料；浏览器本身不会暴露本地文件的真实路径。"""
     choices = {
@@ -224,6 +399,7 @@ def _select_local_file(kind: str) -> str:
     }
     if kind not in directories and kind not in choices:
         raise ValueError(f"不支持的文件类型：{kind!r}")
+    enable_high_dpi()
     try:
         import tkinter as tk
         from tkinter import filedialog
@@ -375,13 +551,16 @@ def _kill_on_exit() -> None:
 def _list_tasks() -> list[dict]:
     items = []
     if config.TASKS_DIR.is_dir():
-        for d in sorted(config.TASKS_DIR.iterdir(), reverse=True):
+        for d in config.TASKS_DIR.iterdir():
+            if not d.is_dir():
+                continue
             report = d / REPORT_NAME
             legacy = d / "覆盖分析报告.md"  # 手工时期的旧产出（tasks/polydiv）
             f = report if report.exists() else legacy if legacy.exists() else None
-            if d.is_dir() and f:
-                items.append({"dir": d.name, "file": f.name})
-    return items
+            if f:
+                items.append((f.stat().st_mtime_ns, d.name, f.name))
+    items.sort(key=lambda item: (item[0], item[1]), reverse=True)
+    return [{"dir": dirname, "file": filename} for _, dirname, filename in items]
 
 
 def _read_report(dirname: str) -> str | None:
@@ -534,10 +713,14 @@ def _resolve_local_materials(card: TaskCard) -> dict:
 class Handler(BaseHTTPRequestHandler):
     protocol_version = "HTTP/1.1"
 
-    def _send(self, code: int, body: bytes, ctype: str) -> None:
+    def _send(
+        self, code: int, body: bytes, ctype: str, cache_control: str | None = None
+    ) -> None:
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
+        if cache_control:
+            self.send_header("Cache-Control", cache_control)
         self.end_headers()
         self.wfile.write(body)
 
@@ -548,13 +731,27 @@ class Handler(BaseHTTPRequestHandler):
     def do_GET(self) -> None:  # noqa: N802（http.server 约定）
         u = urlparse(self.path)
         if u.path == "/":
-            # 与已加载的 Python 后台保持同一版本，避免源码更新后新页面调用旧接口。
-            self._send(200, INDEX_HTML, "text/html; charset=utf-8")
+            try:
+                body = _read_index_html()
+            except OSError as exc:
+                self._json({"error": f"页面读取失败: {exc}"}, 500)
+            else:
+                self._send(
+                    200, body, "text/html; charset=utf-8", cache_control="no-store"
+                )
         elif u.path == "/favicon.ico":
             self.send_response(204)
             self.end_headers()
         elif u.path == "/api/status":
             self._json(_job.snapshot())
+        elif u.path == "/api/runtime":
+            self._json({
+                "service": "woodpecker",
+                "version": RUNTIME_VERSION,
+                "project_root": str(config.PROJECT_ROOT.resolve()),
+                "pid": os.getpid(),
+                "running": bool(_job.snapshot()["running"]),
+            })
         elif u.path == "/api/lifecycle":
             self.send_response(200)
             self.send_header("Content-Type", "text/event-stream; charset=utf-8")
@@ -590,6 +787,12 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"error": "报告不存在"}, 404)
             else:
                 self._json({"dir": dirname, "markdown": text})
+        elif u.path == "/api/code-chat":
+            dirname = parse_qs(u.query).get("dir", [""])[0]
+            try:
+                self._json({"ok": True, **code_chat.conversation(dirname)})
+            except code_chat.CodeChatError as e:
+                self._json({"ok": False, "message": str(e)}, 404)
         else:
             self._json({"error": "not found"}, 404)
 
@@ -602,7 +805,16 @@ class Handler(BaseHTTPRequestHandler):
             self._json({"ok": False, "message": f"请求体不是合法 UTF-8 JSON: {e}"}, 400)
             return
 
-        if path == "/api/parse-input":
+        if path == "/api/shutdown":
+            if _job.snapshot()["running"]:
+                self._json({
+                    "ok": False,
+                    "message": "当前分析仍在运行，不能重启本地服务",
+                }, 409)
+            else:
+                self._json({"ok": True, "message": "本地服务正在重启"})
+                threading.Thread(target=self.server.shutdown, daemon=True).start()
+        elif path == "/api/parse-input":
             try:
                 result = paste.parse_submission_text(str(payload.get("text", "")))
                 self._json({"ok": True, **result})
@@ -747,6 +959,24 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "message": message, **_coverage_prompt_payload()})
             except analyze.AnalyzeError as e:
                 self._json({"ok": False, "message": str(e)}, 400)
+        elif path == "/api/code-chat":
+            try:
+                action = str(payload.get("action", "send")).strip().lower()
+                dirname = str(payload.get("dir", ""))
+                if action == "send":
+                    result = code_chat.send_message(
+                        dirname, str(payload.get("message", "")),
+                        log=lambda _message: None,
+                    )
+                elif action == "clear":
+                    result = code_chat.clear_conversation(dirname)
+                else:
+                    raise code_chat.CodeChatError(
+                        f"不支持的补测代码对话操作：{action}"
+                    )
+                self._json({"ok": True, **result})
+            except (code_chat.CodeChatError, analyze.AnalyzeError, OSError) as e:
+                self._json({"ok": False, "message": str(e)}, 400)
         else:
             self._json({"error": "not found"}, 404)
 
@@ -755,8 +985,10 @@ class Handler(BaseHTTPRequestHandler):
 
 
 def main() -> None:
+    # The service later creates native Tk file dialogs from request threads.
+    enable_high_dpi()
     url = f"http://{HOST}:{PORT}"
-    if _service_is_running():
+    if _should_reuse_running_service():
         webbrowser.open(url)
         return
     try:

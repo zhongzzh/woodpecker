@@ -1,0 +1,33 @@
+integralImage3	using TyImageProcessing
+using BenchmarkTools
+
+I = reshape(1:125, 5, 5, 5);
+
+# mtest-setup end
+
+first_run_time = @elapsed begin
+   J = integralImage3(I);
+end
+
+second_run_time = @belapsed begin
+   J = integralImage3(I);
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+I = reshape(1:125,5,5,5);
+
+[sR, sC, sP, eR, eC, eP] = deal(2, 2, 2, 4, 4, 4);
+
+
+tic;
+J = integralImage3(I);
+first_run_time = toc;
+
+tic;
+J = integralImage3(I);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)	0.0237207	1.85E-07	0.022731	0.000322	1.043539659	5.76E-04

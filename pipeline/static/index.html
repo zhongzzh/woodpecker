@@ -82,6 +82,7 @@
   .input-shell input[readonly] { color:#526158; background:#f5f8f6; cursor:default; }
   .icon-btn { width:34px; height:34px; display:grid; place-items:center; color:var(--muted); background:transparent; border-radius:9px; cursor:pointer; }
   .icon-btn:hover { color:var(--ink); background:#eef2ef; }
+  .icon-btn:disabled { opacity:.4; cursor:not-allowed; }
   .input-shell .icon-btn { position:absolute; right:5px; top:4px; }
   .key-shell #replaceKey { right:5px; }
   .key-shell #toggleKey:not([hidden]) + #replaceKey { right:39px; }
@@ -182,7 +183,7 @@
   .empty-icon svg { width:30px; height:30px; }
   .empty-state h3 { margin:0 0 8px; font-size:16px; }
   .empty-state p { margin:0; color:var(--muted); font-size:12.5px; line-height:1.7; }
-  #report { color:#27342c; font-size:14px; line-height:1.78; }
+  #report { min-width:0; color:#27342c; font-size:14px; line-height:1.78; overflow-wrap:anywhere; }
   #report > :first-child { margin-top:0; }
   #report h1 { margin:0 0 24px; padding-bottom:17px; border-bottom:1px solid var(--line); font-size:25px; line-height:1.25; letter-spacing:-.025em; }
   #report h2 { margin:31px 0 13px; font-size:19px; line-height:1.35; }
@@ -191,15 +192,15 @@
   #report p { margin:9px 0; }
   #report ul,#report ol { margin:9px 0; padding-left:22px; }
   #report li { margin:4px 0; }
-  #report table { width:100%; margin:14px 0 20px; border-collapse:separate; border-spacing:0; border:1px solid var(--line); border-radius:10px; overflow:hidden; font-size:12px; }
-  #report th,#report td { padding:9px 11px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); text-align:left; vertical-align:top; }
+  #report table { width:100%; max-width:100%; margin:14px 0 20px; border-collapse:separate; border-spacing:0; border:1px solid var(--line); border-radius:10px; overflow:hidden; font-size:12px; }
+  #report th,#report td { min-width:0; padding:9px 11px; border-right:1px solid var(--line); border-bottom:1px solid var(--line); text-align:left; vertical-align:top; overflow-wrap:anywhere; }
   #report th:last-child,#report td:last-child { border-right:0; }
   #report tr:last-child td { border-bottom:0; }
   #report th { color:#46544b; background:#f0f5f2; font-weight:750; }
   #report tr:nth-child(even) td { background:#fbfcfb; }
-  #report code { padding:2px 5px; color:#1a5a3a; background:#edf4ef; border-radius:5px; font:12.5px Consolas,monospace; }
+  #report code { padding:2px 5px; color:#1a5a3a; background:#edf4ef; border-radius:5px; font:12.5px Consolas,monospace; white-space:normal; overflow-wrap:anywhere; box-decoration-break:clone; -webkit-box-decoration-break:clone; }
   #report pre { margin:14px 0; padding:15px 17px; overflow:auto; border-radius:11px; background:#17211b; color:#d5dfd8; font:12px/1.65 Consolas,monospace; }
-  #report pre code { padding:0; color:inherit; background:transparent; }
+  #report pre code { padding:0; color:inherit; background:transparent; white-space:pre; overflow-wrap:normal; box-decoration-break:slice; -webkit-box-decoration-break:slice; }
   #report .code-wrap { position:relative; margin:14px 0; }
   #report .code-wrap pre { margin:0; padding-top:44px; }
   #report .copy-code { position:absolute; z-index:2; top:9px; right:9px; height:27px; padding:0 10px; border:1px solid #425047;
@@ -209,6 +210,53 @@
   #report hr { margin:25px 0; border:0; border-top:1px solid var(--line); }
   #report a { color:var(--blue); text-decoration:none; }
   #report a:hover { text-decoration:underline; }
+  .code-chat-dialog { width:min(920px,calc(100vw - 28px)); height:min(780px,calc(100vh - 36px)); }
+  .code-chat-body { display:flex; flex-direction:column; padding:0; overflow:hidden; background:#f7faf8; }
+  .chat-messages { min-height:0; flex:1 1 auto; overflow:auto; display:flex; flex-direction:column; gap:20px; padding:22px 25px 28px; }
+  .chat-empty { flex:1; min-height:260px; display:grid; place-items:center; color:var(--muted); font-size:12.5px; }
+  .chat-message { min-width:0; display:flex; flex-direction:column; align-items:flex-start; gap:6px; }
+  .chat-message.user { align-items:flex-end; }
+  .chat-role { color:#829087; font-size:10.5px; font-weight:750; }
+  .chat-bubble { min-width:0; max-width:88%; color:#2b3830; font-size:13px; line-height:1.7; }
+  .chat-message.user .chat-bubble { padding:10px 13px; color:var(--brand-dark); background:var(--brand-soft); border:1px solid #cce6d6; border-radius:11px 11px 3px 11px; white-space:pre-wrap; overflow-wrap:anywhere; }
+  .chat-message.assistant .chat-bubble { width:100%; max-width:none; }
+  .chat-thinking { display:inline-flex; align-items:center; gap:5px; height:28px; color:var(--muted); }
+  .chat-thinking i { width:6px; height:6px; border-radius:50%; background:#7d9486; animation:chatPulse 1.1s infinite ease-in-out; }
+  .chat-thinking i:nth-child(2) { animation-delay:.15s; }
+  .chat-thinking i:nth-child(3) { animation-delay:.3s; }
+  @keyframes chatPulse { 0%,60%,100% { opacity:.32; transform:translateY(0); } 30% { opacity:1; transform:translateY(-3px); } }
+  .chat-markdown > :first-child { margin-top:0; }
+  .chat-markdown > :last-child { margin-bottom:0; }
+  .chat-markdown h1,.chat-markdown h2,.chat-markdown h3,.chat-markdown h4 { margin:17px 0 8px; font-size:14px; line-height:1.4; }
+  .chat-markdown p { margin:7px 0; }
+  .chat-markdown ul,.chat-markdown ol { margin:8px 0; padding-left:21px; }
+  .chat-markdown code { padding:2px 5px; color:#1a5a3a; background:#e9f2ec; border-radius:5px; font:12px Consolas,monospace; }
+  .chat-markdown .code-wrap { position:relative; margin:11px 0; }
+  .chat-markdown pre { margin:0; padding:42px 15px 15px; overflow:auto; border-radius:10px; color:#d5dfd8; background:#17211b; font:12px/1.65 Consolas,monospace; }
+  .chat-markdown pre code { padding:0; color:inherit; background:transparent; }
+  .chat-markdown .copy-code { position:absolute; z-index:2; top:8px; right:8px; height:27px; padding:0 10px; border:1px solid #425047; border-radius:7px; color:#d9e2dc; background:#26322a; font-size:11px; font-weight:700; cursor:pointer; }
+  .chat-markdown blockquote { margin:10px 0; padding:8px 12px; border-left:3px solid var(--brand); color:#526158; background:#edf5f0; }
+  .chat-markdown table { width:100%; margin:11px 0; border-collapse:collapse; font-size:11.5px; }
+  .chat-markdown th,.chat-markdown td { padding:7px 9px; border:1px solid var(--line); text-align:left; vertical-align:top; }
+  .chat-composer { flex:none; padding:14px 18px 18px; border-top:1px solid var(--line); background:#fff; }
+  .chat-composer-surface { overflow:hidden; border:1px solid #c8d4cc; border-radius:18px; background:#fff;
+    box-shadow:0 5px 20px rgba(28,52,37,.07); transition:border-color .16s,box-shadow .16s; }
+  .chat-composer-surface:hover { border-color:#aebfb4; }
+  .chat-composer-surface:focus-within { border-color:#7da38b; box-shadow:0 0 0 3px rgba(23,107,67,.09),0 7px 24px rgba(28,52,37,.08); }
+  .chat-composer textarea { display:block; height:48px; min-height:48px; max-height:148px; padding:13px 15px 5px;
+    resize:none; overflow-y:hidden; border:0; border-radius:0; background:transparent; line-height:1.55; box-shadow:none; }
+  .chat-composer textarea:hover,.chat-composer textarea:focus { border:0; box-shadow:none; }
+  .chat-composer-footer { min-height:44px; display:flex; align-items:center; justify-content:space-between; gap:12px; padding:3px 7px 7px 15px; }
+  .chat-composer-count { color:#97a29b; font-size:10.5px; font-variant-numeric:tabular-nums; }
+  .chat-send { width:36px; height:36px; flex:none; display:grid; place-items:center; padding:0; border-radius:50%;
+    color:#fff; background:#1d2b22; box-shadow:0 4px 12px rgba(29,43,34,.18); cursor:pointer;
+    transition:background .15s,box-shadow .15s,transform .15s,opacity .15s; }
+  .chat-send:hover:not(:disabled) { background:var(--brand); box-shadow:0 6px 16px rgba(23,107,67,.24); transform:translateY(-1px); }
+  .chat-send:active:not(:disabled) { transform:translateY(0); }
+  .chat-send:disabled { color:#9ca8a0; background:#e7ece9; box-shadow:none; cursor:not-allowed; }
+  .chat-send.loading:disabled { color:#fff; background:#1d2b22; }
+  .chat-send svg { width:18px; height:18px; }
+  .chat-send .spinner { width:16px; height:16px; }
   dialog { width:min(720px,calc(100vw - 28px)); max-height:calc(100vh - 36px); padding:0; overflow:hidden;
     border:1px solid var(--line); border-radius:20px; color:var(--ink); background:#fff; box-shadow:0 30px 90px rgba(20,39,27,.25); }
   dialog[open] { display:flex; flex-direction:column; }
@@ -258,7 +306,8 @@
   .prompt-actions { display:flex; align-items:center; justify-content:space-between; gap:12px; margin-top:10px; }
   .prompt-actions > div { display:flex; gap:8px; }
   .prompt-count { color:var(--muted); font-size:11px; }
-  .gitlab-grid { display:grid; grid-template-columns:1fr 150px; gap:12px; }
+  .gitlab-grid { display:grid; grid-template-columns:minmax(0,1fr) 150px; align-items:start; gap:12px; }
+  .gitlab-grid > .field { display:grid; gap:7px; margin-top:0; }
   .gitlab-status { display:flex; align-items:flex-start; gap:10px; margin-top:18px; padding:13px;
     border:1px solid var(--line); border-radius:12px; background:var(--surface-2); color:#526158; font-size:12px; line-height:1.6; }
   .gitlab-status .dot { width:9px; height:9px; flex:none; margin-top:5px; border-radius:50%; background:var(--warn); }
@@ -294,8 +343,10 @@
     .shortcut { display:none; }
     .form-footer .btn { width:100%; }
     .report-head { flex-direction:column; align-items:stretch; }
-    .report-toolbar { display:grid; grid-template-columns:1fr auto; }
+    .report-toolbar { display:grid; grid-template-columns:minmax(0,1fr) auto auto; }
     .history-select { width:100%; }
+    .report-toolbar #openCodeChat,.report-toolbar #download { width:40px; padding:0; }
+    .report-toolbar #openCodeChat span,.report-toolbar #download span { display:none; }
     .report-body { padding:23px 18px 40px; min-height:500px; }
     .step-label { font-size:9px; }
     .dialog-body { padding:18px; }
@@ -307,6 +358,13 @@
     .endpoint-row,.model-row,.protocol-switch,.ai-test-row,.gitlab-grid,.local-repo-grid { grid-template-columns:1fr; }
     .prompt-actions { align-items:flex-start; flex-direction:column; }
     .effective-panel { grid-template-columns:1fr; }
+    .code-chat-dialog { width:calc(100vw - 16px); height:calc(100vh - 16px); max-height:none; }
+    .chat-messages { padding:18px 15px 22px; }
+    .chat-bubble { max-width:94%; }
+    .chat-composer { padding:10px 11px 12px; }
+    .chat-composer-surface { border-radius:16px; }
+    .chat-composer textarea { min-height:46px; padding:12px 13px 4px; }
+    .chat-composer-footer { min-height:42px; padding:2px 6px 6px 13px; }
     .toast-region { left:14px; right:14px; bottom:14px; }
     .toast { min-width:0; max-width:none; }
   }
@@ -396,7 +454,7 @@
     </div>
 
     <section class="card report-card" aria-labelledby="reportTitle">
-      <div class="card-head report-head"><div class="card-title-wrap"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h8M8 9h2"/></svg></div><div><h2 class="card-title" id="reportTitle">分析报告</h2><p class="card-desc" id="reportMeta">运行完成后将在这里展示</p></div></div><div class="report-toolbar"><select class="history-select" id="history" aria-label="历史任务"><option value="">选择历史报告…</option></select><button class="btn btn-secondary" id="download" type="button" disabled title="下载 Markdown 报告"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg><span>下载</span></button></div></div>
+      <div class="card-head report-head"><div class="card-title-wrap"><div class="card-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h8M8 9h2"/></svg></div><div><h2 class="card-title" id="reportTitle">分析报告</h2><p class="card-desc" id="reportMeta">运行完成后将在这里展示</p></div></div><div class="report-toolbar"><select class="history-select" id="history" aria-label="历史任务"><option value="">选择历史报告…</option></select><button class="btn btn-secondary" id="openCodeChat" type="button" disabled title="优化补测代码" aria-label="优化补测代码"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4Z"/><path d="m9 9-2 2 2 2m6-4 2 2-2 2m-2-6-2 8"/></svg><span>优化代码</span></button><button class="btn btn-secondary" id="download" type="button" disabled title="下载 Markdown 报告" aria-label="下载 Markdown 报告"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3v12m0 0 4-4m-4 4-4-4M5 21h14"/></svg><span>下载</span></button></div></div>
       <div class="report-body" id="reportViewport"><div class="empty-state" id="report"><div class="empty-inner"><div class="empty-icon"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6M8 13h8M8 17h5"/></svg></div><h3>还没有打开报告</h3><p>开始一个新任务，或从右上角选择历史报告。分析结果会在这里以易读格式呈现。</p></div></div></div>
     </section>
   </div>
@@ -431,11 +489,24 @@
   <div class="dialog-footer"><button class="btn btn-ghost" id="clearAi" type="button">使用环境变量默认</button><div class="footer-actions"><button class="btn btn-secondary" id="cancelAi" type="button">取消</button><button class="btn btn-primary" id="saveAi" type="button"><span>保存配置</span></button></div></div>
 </dialog>
 
+<dialog id="codeChatDialog" class="code-chat-dialog" aria-labelledby="codeChatDialogTitle">
+  <div class="dialog-head"><div><h2 id="codeChatDialogTitle">补测代码优化</h2><p id="codeChatMeta">未选择任务</p></div><div class="footer-actions"><button class="icon-btn" id="clearCodeChat" type="button" aria-label="清空当前任务对话" title="清空当前任务对话" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 6h18M8 6V4h8v2m-9 0 1 14h8l1-14M10 10v6m4-6v6"/></svg></button><button class="icon-btn" id="closeCodeChat" type="button" aria-label="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div></div>
+  <div class="dialog-body code-chat-body">
+    <div class="chat-messages" id="codeChatMessages" aria-live="polite"><div class="chat-empty">暂无对话</div></div>
+    <form class="chat-composer" id="codeChatForm">
+      <div class="chat-composer-surface">
+        <textarea id="codeChatInput" rows="1" maxlength="6000" enterkeyhint="send" aria-keyshortcuts="Enter" placeholder="输入修改要求" aria-label="补测代码修改要求"></textarea>
+        <div class="chat-composer-footer"><span class="chat-composer-count" id="codeChatCount">0 / 6000</span><button class="chat-send" id="sendCodeChat" type="submit" aria-label="发送消息" title="发送消息" disabled><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="m5 12 7-7 7 7M12 19V5"/></svg></button></div>
+      </div>
+    </form>
+  </div>
+</dialog>
+
 <div class="toast-region" id="toastRegion" aria-live="polite"></div>
 
 <script>
 const $ = id => document.getElementById(id);
-let currentMd = "", currentDir = "", polling = null, aiConfig = null, aiDraftNew = false, aiFormBaseline = "", coveragePromptBaseline = "", lifecycleConnection = null, logFollowMode = true, resolvedPathsKey = "";
+let currentMd = "", currentDir = "", polling = null, aiConfig = null, aiDraftNew = false, aiFormBaseline = "", coveragePromptBaseline = "", lifecycleConnection = null, logFollowMode = true, resolvedPathsKey = "", reportLoadVersion = 0, codeChatDir = "", codeChatMessages = [], codeChatBusy = false, codeChatLoading = false, codeChatLoadVersion = 0;
 const iconCheck = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m3 8 3 3 7-7"/></svg>';
 
 function esc(s){ return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -474,13 +545,44 @@ async function refreshTasks(selectDir){
   catch(e){toast("历史任务读取失败："+e.message,"error");}
 }
 async function loadReport(dir){
-  if(!dir)return; $("report").className=""; $("report").innerHTML='<div class="empty-state"><div class="empty-inner"><span class="spinner" style="display:inline-block;color:var(--brand)"></span><p style="margin-top:12px">正在读取报告…</p></div></div>';
-  try{const {data}=await api("/api/report?dir="+encodeURIComponent(dir));if(data.error)throw new Error(data.error);currentMd=data.markdown;currentDir=dir;$("report").innerHTML=renderMd(currentMd);$("download").disabled=false;$("reportMeta").textContent=dir;$("reportViewport").scrollTop=0;}
-  catch(e){$("report").innerHTML=`<div class="empty-state"><div class="empty-inner"><h3>报告读取失败</h3><p>${esc(e.message)}</p></div></div>`;toast(e.message,"error");}
+  if(!dir)return;const version=++reportLoadVersion;codeChatLoadVersion++;codeChatDir="";codeChatLoading=false;codeChatMessages=[];$("codeChatInput").value="";resizeCodeChatInput();if($("codeChatDialog").open)$("codeChatDialog").close();renderCodeChat([]);currentMd="";currentDir="";$("download").disabled=true;$("openCodeChat").disabled=true;$("report").className="";$("report").innerHTML='<div class="empty-state"><div class="empty-inner"><span class="spinner" style="display:inline-block;color:var(--brand)"></span><p style="margin-top:12px">正在读取报告…</p></div></div>';
+  try{const {data}=await api("/api/report?dir="+encodeURIComponent(dir));if(version!==reportLoadVersion)return;if(data.error)throw new Error(data.error);currentMd=data.markdown;currentDir=dir;$("report").innerHTML=renderMd(currentMd);$("download").disabled=false;$("openCodeChat").disabled=false;$("reportMeta").textContent=dir;$("reportViewport").scrollTop=0;}
+  catch(e){if(version!==reportLoadVersion)return;currentDir="";$("report").innerHTML=`<div class="empty-state"><div class="empty-inner"><h3>报告读取失败</h3><p>${esc(e.message)}</p></div></div>`;toast(e.message,"error");}
 }
 $("history").onchange=e=>loadReport(e.target.value);
 $("download").onclick=()=>{if(!currentMd)return;const blob=new Blob([currentMd],{type:"text/markdown;charset=utf-8"}),a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=currentDir+"-分析报告.md";a.click();setTimeout(()=>URL.revokeObjectURL(a.href),0);};
-$("report").addEventListener("click",async e=>{const btn=e.target.closest(".copy-code");if(!btn)return;const text=btn.parentElement.querySelector("code").textContent;try{await navigator.clipboard.writeText(text);}catch{const area=document.createElement("textarea");area.value=text;area.style.position="fixed";area.style.opacity="0";document.body.appendChild(area);area.select();document.execCommand("copy");area.remove();}const old=btn.textContent;btn.textContent="已复制";toast("内容已复制到剪贴板");setTimeout(()=>btn.textContent=old,1600);});
+async function copyCodeFromClick(e){const btn=e.target.closest(".copy-code");if(!btn)return;const text=btn.parentElement.querySelector("code").textContent;try{await navigator.clipboard.writeText(text);}catch{const area=document.createElement("textarea");area.value=text;area.style.position="fixed";area.style.opacity="0";document.body.appendChild(area);area.select();document.execCommand("copy");area.remove();}const old=btn.textContent;btn.textContent="已复制";toast("内容已复制到剪贴板");setTimeout(()=>btn.textContent=old,1600);}
+$("report").addEventListener("click",copyCodeFromClick);
+$("codeChatMessages").addEventListener("click",copyCodeFromClick);
+
+function resizeCodeChatInput(){
+  const input=$("codeChatInput"),maxHeight=148;input.style.height="auto";const next=Math.max(48,Math.min(input.scrollHeight,maxHeight));input.style.height=next+"px";input.style.overflowY=input.scrollHeight>maxHeight?"auto":"hidden";$("codeChatCount").textContent=input.value.length+" / 6000";
+}
+function setCodeChatSending(sending){
+  const button=$("sendCodeChat");if(sending){button.dataset.html=button.innerHTML;button.classList.add("loading");button.disabled=true;button.setAttribute("aria-label","AI 正在回复");button.innerHTML='<span class="spinner"></span>';}else{button.classList.remove("loading");if(button.dataset.html)button.innerHTML=button.dataset.html;button.setAttribute("aria-label","发送消息");}
+}
+
+function renderCodeChat(messages,thinking=false){
+  codeChatMessages=messages||[];const box=$("codeChatMessages");syncCodeChatControls();if(!codeChatMessages.length&&!thinking){box.innerHTML='<div class="chat-empty">暂无对话</div>';return;}
+  box.innerHTML=codeChatMessages.map(item=>item.role==="assistant"?`<div class="chat-message assistant"><div class="chat-role">AI</div><div class="chat-bubble chat-markdown">${renderMd(item.content)}</div></div>`:`<div class="chat-message user"><div class="chat-role">你</div><div class="chat-bubble">${esc(item.content)}</div></div>`).join("")+(thinking?'<div class="chat-message assistant"><div class="chat-role">AI</div><div class="chat-thinking" aria-label="AI 正在回复"><i></i><i></i><i></i></div></div>':"");
+  box.scrollTop=box.scrollHeight;
+}
+function syncCodeChatControls(){
+  const unavailable=codeChatBusy||codeChatLoading||!codeChatDir;$("codeChatInput").disabled=unavailable;$("clearCodeChat").disabled=unavailable||!codeChatMessages.length;if(!$("sendCodeChat").classList.contains("loading"))$("sendCodeChat").disabled=unavailable||!$("codeChatInput").value.trim();
+}
+async function loadCodeChat(dir){
+  if(!dir)return;const version=++codeChatLoadVersion;codeChatDir=dir;codeChatLoading=true;$("codeChatMeta").textContent=dir;renderCodeChat([],true);
+  try{const {data}=await api("/api/code-chat?dir="+encodeURIComponent(dir));if(version!==codeChatLoadVersion||codeChatDir!==dir)return;if(!data.ok)throw new Error(data.message);renderCodeChat(data.messages||[]);}
+  catch(e){if(version!==codeChatLoadVersion||codeChatDir!==dir)return;renderCodeChat([]);toast(e.message,"error");}
+  finally{if(version===codeChatLoadVersion&&codeChatDir===dir){codeChatLoading=false;syncCodeChatControls();if($("codeChatDialog").open)$("codeChatInput").focus();}}
+}
+$("openCodeChat").onclick=()=>{if(!currentDir)return;const dir=currentDir;$("codeChatDialog").showModal();loadCodeChat(dir);};
+$("closeCodeChat").onclick=()=>$("codeChatDialog").close();
+$("codeChatDialog").addEventListener("click",e=>{if(e.target===$("codeChatDialog")&&!codeChatBusy)$("codeChatDialog").close();});
+$("codeChatInput").addEventListener("input",()=>{resizeCodeChatInput();syncCodeChatControls();});
+$("codeChatInput").addEventListener("keydown",e=>{if(e.key==="Enter"&&!e.shiftKey&&!e.isComposing&&e.keyCode!==229){e.preventDefault();if(!$("sendCodeChat").disabled)$("codeChatForm").requestSubmit();}});
+$("clearCodeChat").onclick=async()=>{if(!codeChatDir||codeChatBusy||codeChatLoading||!codeChatMessages.length)return;if(!confirm("确定清空当前任务的补测代码优化对话吗？"))return;const dir=codeChatDir;codeChatBusy=true;syncCodeChatControls();try{const {data}=await api("/api/code-chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"clear",dir})});if(!data.ok)throw new Error(data.message);if(codeChatDir===dir)renderCodeChat([]);toast("当前任务对话已清空");}catch(e){toast(e.message,"error");}finally{codeChatBusy=false;syncCodeChatControls();}};
+$("codeChatForm").onsubmit=async e=>{e.preventDefault();if(codeChatBusy||codeChatLoading||!codeChatDir)return;const message=$("codeChatInput").value.trim();if(!message){$("codeChatInput").focus();return;}const dir=codeChatDir,previous=[...codeChatMessages],optimistic=[...previous,{role:"user",content:message}];codeChatBusy=true;$("codeChatInput").value="";resizeCodeChatInput();renderCodeChat(optimistic,true);setCodeChatSending(true);try{const {data}=await api("/api/code-chat",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"send",dir,message})});if(!data.ok)throw new Error(data.message);if(codeChatDir===dir)renderCodeChat(data.messages||[]);}catch(err){if(codeChatDir===dir){renderCodeChat(previous);$("codeChatInput").value=message;resizeCodeChatInput();}toast(err.message,"error");}finally{codeChatBusy=false;setCodeChatSending(false);syncCodeChatControls();if($("codeChatDialog").open&&codeChatDir===dir)$("codeChatInput").focus();}};
 
 function setModelOptions(models,selected){
   const sel=$("ai_model"),cur=selected||sel.value;sel.innerHTML=models.length?models.map(m=>`<option value="${esc(m)}">${esc(m)}</option>`).join(""):'<option value="">尚未获取模型列表</option>';
@@ -589,7 +691,7 @@ $("testAi").onclick=async()=>{
   try{const {data}=await api("/api/ai-test",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({question,protocol:selectedProtocol(),base_url:$("ai_base").value.trim(),api_key:activeAiKey(),model:$("ai_model").value,profile_id:aiDraftNew?"":aiConfig.active_profile_id,timeout_seconds:$("ai_timeout").value.trim()})});if(!data.ok)throw new Error(data.message);showAiTest(data.answer,"success");toast("AI 试问成功");}
   catch(e){showAiTest(e.message,"error");toast(e.message,"error");}finally{setButtonBusy(btn,false);}
 };
-$("ai_test_prompt").addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){$("testAi").click();}});
+$("ai_test_prompt").addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"){e.preventDefault();$("testAi").click();}});
 $("coverage_prompt").addEventListener("input",()=>{$("promptCount").textContent=`${$("coverage_prompt").value.length} 个字符`;$("promptMsg").textContent=coveragePromptDirty()?"提示词有尚未保存的修改。":"下一次覆盖分析将使用这里保存的内容。";$("promptMsg").className="inline-msg";});
 $("savePrompt").onclick=async()=>{
   const prompt=$("coverage_prompt").value.trim(),btn=$("savePrompt");if(!prompt){$("promptMsg").textContent="提示词不能为空。";$("promptMsg").className="inline-msg error";$("coverage_prompt").focus();return;}setButtonBusy(btn,true,"保存中");
@@ -684,7 +786,7 @@ $("taskForm").onsubmit=async e=>{
   try{const {data}=await api("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});if(!data.ok)throw new Error(data.message);applyResolvedPaths(data.resolved_paths);btn.innerHTML=btn.dataset.html;btn.classList.remove("loading");btn.disabled=true;if(!polling)polling=setInterval(poll,1000);poll();}
   catch(e){setButtonBusy(btn,false);updateSteps(0);setStatus("error","启动失败",e.message);toast(e.message,"error");}
 };
-document.addEventListener("keydown",e=>{if((e.ctrlKey||e.metaKey)&&e.key==="Enter"&&!$("aiDialog").open)$("taskForm").requestSubmit();});
+document.addEventListener("keydown",e=>{if(!(e.ctrlKey||e.metaKey)||e.key!=="Enter")return;if($("codeChatDialog").open){e.preventDefault();$("codeChatForm").requestSubmit();return;}if(document.querySelector("dialog[open]"))return;e.preventDefault();$("taskForm").requestSubmit();});
 
 // 持久连接用于感知页面生命周期：最后一个页面关闭后，隐藏的本地服务会自动退出。
 if("EventSource" in window) lifecycleConnection=new EventSource("/api/lifecycle");

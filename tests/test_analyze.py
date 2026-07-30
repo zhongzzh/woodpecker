@@ -19,6 +19,18 @@ class AiConfigTests(unittest.TestCase):
         self.assertIn("单元格内禁止出现换行", rules)
         self.assertIn("对应测试用例位置", rules)
 
+    def test_coverage_prompt_requires_independent_tests_appended_at_end(self):
+        rules = analyze._load_rules()
+        self.assertIn("只能整体追加到目标单元测试主文件的物理末尾", rules)
+        self.assertIn("不得插入、替换、删除或改写", rules)
+        self.assertIn("独立的顶层 `@testset`", rules)
+        self.assertIn("不得引用原有测试块内部的局部变量", rules)
+        self.assertIn("不得建议插入到任何现有测试块中", rules)
+
+        user = analyze._build_user("sample", "# sample", "@test true")
+        self.assertIn("整块可原样追加到单元测试主文件的物理末尾", user)
+        self.assertIn("不得插入、改写或复述任何原有代码", user)
+
     def test_custom_coverage_prompt_overrides_default_and_can_be_reset(self):
         with tempfile.TemporaryDirectory() as tmp:
             custom_path = Path(tmp) / ".coverage-prompt.md"
@@ -180,11 +192,20 @@ class AiConfigTests(unittest.TestCase):
                 "**性能结论：大概通过**"
             )
         )
+        self.assertEqual(
+            analyze.performance_verdict_from_markdown(
+                "**性能结论：性能通过（首次通过、二次通过）**"
+            ),
+            "性能通过",
+        )
 
-    def test_pasted_performance_analysis_rejects_unstructured_conclusion(self):
+    def test_pasted_performance_analysis_returns_unstructured_response(self):
         with patch("pipeline.analyze._run_analysis", return_value="综合来看还可以"):
-            with self.assertRaisesRegex(analyze.AnalyzeError, "四态结论"):
-                analyze.pasted_performance_analysis("graycomatrix", "原始性能数据")
+            result = analyze.pasted_performance_analysis(
+                "graycomatrix", "原始性能数据"
+            )
+
+        self.assertEqual(result, "综合来看还可以")
 
 
 class AiProfileStoreTests(unittest.TestCase):
