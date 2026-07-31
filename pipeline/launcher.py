@@ -18,6 +18,12 @@ from .windows_dpi import enable_high_dpi, scaled_tk_window_size
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
 VENV_PYTHONW = PROJECT_ROOT / ".venv" / "Scripts" / "pythonw.exe"
+_HEADER_MIN_HEIGHT = 92
+
+
+def _launcher_header_height(mark_height: int, title_height: int) -> int:
+    """Keep the launcher header tall enough for the display's actual fonts."""
+    return max(_HEADER_MIN_HEIGHT, mark_height + 36, title_height + 32)
 
 
 def _hidden_process_kwargs() -> dict:
@@ -95,7 +101,7 @@ def main() -> None:
                      highlightbackground=colors["line"])
     shell.pack(fill="both", expand=True, padx=20, pady=20)
 
-    header = tk.Frame(shell, bg=colors["brand"], height=92)
+    header = tk.Frame(shell, bg=colors["brand"], height=_HEADER_MIN_HEIGHT)
     header.pack(fill="x")
     header.pack_propagate(False)
     mark = tk.Label(header, text="W", width=3, height=1, bg="#ffffff",
@@ -105,8 +111,15 @@ def main() -> None:
     title_group.pack(side="left", fill="y", pady=16)
     tk.Label(title_group, text="Woodpecker", bg=colors["brand"], fg="#ffffff",
              font=("Segoe UI", 18, "bold")).pack(anchor="w")
-    tk.Label(title_group, text="数学库提测分析工作台", bg=colors["brand"],
-             fg="#d9eee8", font=("Microsoft YaHei UI", 9)).pack(anchor="w", pady=(2, 0))
+    subtitle = tk.Label(
+        title_group, text="数学库提测分析工作台", bg=colors["brand"],
+        fg="#d9eee8", font=("Microsoft YaHei UI", 9), pady=1,
+    )
+    subtitle.pack(anchor="w", pady=(2, 0))
+    header.update_idletasks()
+    header.configure(height=_launcher_header_height(
+        mark.winfo_reqheight(), title_group.winfo_reqheight()
+    ))
 
     body = tk.Frame(shell, bg=colors["surface"])
     body.pack(fill="both", expand=True, padx=28, pady=(22, 20))

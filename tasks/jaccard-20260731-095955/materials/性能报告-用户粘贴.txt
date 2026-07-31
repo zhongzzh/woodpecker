@@ -1,0 +1,45 @@
+jaccard	using TyImageProcessing
+using BenchmarkTools
+
+A = imread("hands1.jpg");
+I = im2gray(A);
+mask = falses(size(I));
+mask[25:(end - 25), 25:(end - 25)] .= true;
+BW = activecontour(I, mask, 300);
+BW_groundTruth = imread("hands1-mask.png") .!= 0;
+
+# mtest-setup end
+
+first_run_time = @elapsed begin
+   similarity = jaccard(BW, BW_groundTruth);
+end
+
+second_run_time = @belapsed begin
+    similarity = jaccard(BW, BW_groundTruth);
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+A = imread('hands1.jpg');
+I = im2gray(A);
+figure
+imshow(I)
+title('Original Image')
+
+mask = false(size(I));
+mask(25:end-25,25:end-25) = true;
+BW = activecontour(I, mask, 300);
+
+BW_groundTruth = imread('hands1-mask.png');
+
+tic;
+similarity = jaccard(BW, BW_groundTruth);
+first_run_time = toc;
+
+tic;
+similarity = jaccard(BW, BW_groundTruth);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)	5.48E-05	4.62E-05	0.026516	0.00061	2.07E-03	7.57E-02

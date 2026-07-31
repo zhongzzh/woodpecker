@@ -11,7 +11,100 @@ from pipeline import analyze
 EMPTY_CONFIG = {"protocol": "", "base_url": "", "api_key": "", "model": ""}
 
 
+class _FakeResponse:
+    def __init__(self, lines):
+        self.lines = lines
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_args):
+        return False
+
+    def __iter__(self):
+        return iter(self.lines)
+
+
+class _InterruptedResponse(_FakeResponse):
+    def __iter__(self):
+        yield from self.lines
+        raise ConnectionResetError("stream interrupted")
+
+
 class AiConfigTests(unittest.TestCase):
+    def test_openai_streams_and_reassembles_the_final_content(self):
+        response = _FakeResponse([
+            b'data: {"choices":[{"delta":{"reasoning_content":"internal "},"finish_reason":null}]}\n',
+            b'data: {"choices":[{"delta":{"content":"Hello "},"finish_reason":null}]}\n',
+            b'data: {"choices":[{"delta":{"content":"world"},"finish_reason":"stop"}]}\n',
+            b'data: [DONE]\n',
+        ])
+        effective = {
+            "protocol": "openai", "base_url": "https://openai.example",
+            "api_key": "test-key", "model": "test-model", "timeout_seconds": 1200,
+        }
+        logs = []
+        with patch("pipeline.analyze.urllib.request.urlopen", return_value=response) as request:
+            result = analyze._via_openai("system", "user", logs.append, eff=effective)
+
+        payload = json.loads(request.call_args.args[0].data)
+        self.assertTrue(payload["stream"])
+        self.assertEqual(request.call_args.args[0].get_header("Accept"), "text/event-stream")
+        self.assertEqual(result, "Hello world")
+        self.assertTrue(any("流式" in line for line in logs))
+
+    def test_openai_stream_falls_back_to_reasoning_content(self):
+        response = _FakeResponse([
+            b'data: {"choices":[{"delta":{"reasoning_content":"fallback "},"finish_reason":null}]}\n',
+            b'data: {"choices":[{"delta":{"reasoning_content":"text"},"finish_reason":"stop"}]}\n',
+            b'data: [DONE]\n',
+        ])
+        effective = {
+            "protocol": "openai", "base_url": "https://openai.example",
+            "api_key": "test-key", "model": "test-model", "timeout_seconds": 1200,
+        }
+        with patch("pipeline.analyze.urllib.request.urlopen", return_value=response):
+            result = analyze._via_openai(
+                "system", "user", lambda _message: None, eff=effective
+            )
+
+        self.assertEqual(result, "fallback text")
+
+    def test_openai_accepts_endpoint_that_ignores_streaming(self):
+        complete = {
+            "choices": [{
+                "message": {"content": "complete response"},
+                "finish_reason": "stop",
+            }],
+        }
+        response = _FakeResponse([json.dumps(complete).encode("utf-8")])
+        effective = {
+            "protocol": "openai", "base_url": "https://openai.example",
+            "api_key": "test-key", "model": "test-model", "timeout_seconds": 1200,
+        }
+        with patch("pipeline.analyze.urllib.request.urlopen", return_value=response):
+            result = analyze._via_openai(
+                "system", "user", lambda _message: None, eff=effective
+            )
+
+        self.assertEqual(result, "complete response")
+
+    def test_openai_discards_partial_content_when_stream_is_interrupted(self):
+        response = _InterruptedResponse([
+            b'data: {"choices":[{"delta":{"content":"partial"},"finish_reason":null}]}\n',
+        ])
+        effective = {
+            "protocol": "openai", "base_url": "https://openai.example",
+            "api_key": "test-key", "model": "test-model", "timeout_seconds": 1200,
+        }
+        with (
+            patch("pipeline.analyze.urllib.request.urlopen", return_value=response),
+            self.assertRaisesRegex(analyze.AnalyzeError, "stream interrupted"),
+        ):
+            analyze._via_openai(
+                "system", "user", lambda _message: None, eff=effective
+            )
+
     def test_coverage_prompt_v2_enforces_stable_markdown_tables(self):
         rules = analyze._load_rules()
         self.assertEqual(analyze.config.PROMPT_FILE.name, "覆盖分析提示词-v2.md")

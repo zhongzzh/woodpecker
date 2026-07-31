@@ -14,6 +14,7 @@ WOODPECKER_MODEL。调用失败时使用同一份配置最多尝试三次，不�
 
 from __future__ import annotations
 
+import http.client
 import json
 import os
 import time
@@ -413,11 +414,10 @@ def _build_user(func: str, doc_md: str, test_bundle: str) -> str:
     )
 
 
-def _openai_content(message: dict) -> str:
+def _openai_text(content) -> str:
     """兼容标准字符串内容及部分兼容端点返回的内容块。"""
-    content = message.get("content", "")
     if isinstance(content, str):
-        return content.strip()
+        return content
     if isinstance(content, list):
         chunks = []
         for item in content:
@@ -429,8 +429,73 @@ def _openai_content(message: dict) -> str:
                     text = text.get("value", "")
                 if text:
                     chunks.append(str(text))
-        return "".join(chunks).strip()
-    return str(content or "").strip()
+        return "".join(chunks)
+    return str(content or "")
+
+
+def _openai_content(message: dict) -> str:
+    return _openai_text(message.get("content", "")).strip()
+
+
+def _openai_complete_response(data: dict) -> tuple[str, str]:
+    """提取非流式响应，兼容忽略 ``stream`` 参数的中转端点。"""
+    choices = data.get("choices", []) if isinstance(data, dict) else []
+    if not choices or not isinstance(choices[0], dict):
+        raise AnalyzeError(f"OpenAI 接口返回格式不认识：{str(data)[:500]}")
+    choice = choices[0]
+    message = choice.get("message", {})
+    report = _openai_content(message) if isinstance(message, dict) else ""
+    if not report and isinstance(message, dict):
+        # 某些推理模型兼容端点使用 reasoning_content 字段返回正文。
+        report = _openai_text(message.get("reasoning_content", "")).strip()
+    return report, str(choice.get("finish_reason", "") or "")
+
+
+def _openai_stream_response(response) -> tuple[str, str]:
+    """读取 Chat Completions SSE，并在流完整结束后返回拼接结果。"""
+    content_chunks: list[str] = []
+    reasoning_chunks: list[str] = []
+    json_lines: list[str] = []
+    finish_reason = ""
+    saw_sse = False
+
+    for raw in response:
+        line = raw.decode("utf-8", errors="replace").strip()
+        if not line or line.startswith(":"):
+            continue
+        if not line.startswith("data:"):
+            json_lines.append(line)
+            continue
+
+        saw_sse = True
+        event_data = line[5:].strip()
+        if event_data == "[DONE]":
+            break
+        event = json.loads(event_data)
+        if isinstance(event, dict) and event.get("error"):
+            raise AnalyzeError(f"OpenAI 流式响应失败：{str(event['error'])[:500]}")
+        choices = event.get("choices", []) if isinstance(event, dict) else []
+        if not choices or not isinstance(choices[0], dict):
+            continue
+        choice = choices[0]
+        delta = choice.get("delta")
+        if not isinstance(delta, dict):
+            delta = choice.get("message", {})
+        if isinstance(delta, dict):
+            content_chunks.append(_openai_text(delta.get("content", "")))
+            reasoning_chunks.append(_openai_text(delta.get("reasoning_content", "")))
+        if choice.get("finish_reason"):
+            finish_reason = str(choice["finish_reason"])
+
+    if not saw_sse:
+        if not json_lines:
+            raise AnalyzeError("OpenAI 接口返回了空响应")
+        return _openai_complete_response(json.loads("\n".join(json_lines)))
+
+    report = "".join(content_chunks).strip()
+    if not report:
+        report = "".join(reasoning_chunks).strip()
+    return report, finish_reason
 
 
 def _via_openai(
@@ -448,7 +513,7 @@ def _via_openai(
     headers = {
         "Authorization": f"Bearer {eff['api_key']}",
         "Content-Type": "application/json",
-        "Accept": "application/json",
+        "Accept": "text/event-stream",
         "User-Agent": "Woodpecker/1.0",
     }
     base_payload = {
@@ -459,8 +524,8 @@ def _via_openai(
         ],
     }
 
-    def _request(token_field: str) -> dict:
-        payload = {**base_payload, token_field: max_tokens}
+    def _request(token_field: str) -> tuple[str, str]:
+        payload = {**base_payload, token_field: max_tokens, "stream": True}
         req = urllib.request.Request(
             url,
             data=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
@@ -471,7 +536,7 @@ def _via_openai(
             with urllib.request.urlopen(
                 req, timeout=eff.get("timeout_seconds", _default_timeout_seconds())
             ) as resp:
-                return json.load(resp)
+                return _openai_stream_response(resp)
         except urllib.error.HTTPError as e:
             detail = e.read().decode("utf-8", errors="replace")[:1000]
             if (
@@ -486,26 +551,19 @@ def _via_openai(
             raise AnalyzeError(
                 f"OpenAI 请求超过 {eff.get('timeout_seconds', _default_timeout_seconds())} 秒未完成"
             ) from e
-        except (urllib.error.URLError, json.JSONDecodeError) as e:
+        except (
+            urllib.error.URLError, OSError, http.client.HTTPException,
+            json.JSONDecodeError,
+        ) as e:
             raise AnalyzeError(f"OpenAI 请求失败：{e}") from e
 
     log(
-        f"  [openai] 调用 {eff['model']}（输入约 {len(system) + len(user)} 字符，"
+        f"  [openai] 调用 {eff['model']}（流式，输入约 {len(system) + len(user)} 字符，"
         f"超时 {eff.get('timeout_seconds', _default_timeout_seconds())} 秒）……"
     )
-    data = _request("max_tokens")
-    choices = data.get("choices", []) if isinstance(data, dict) else []
-    if not choices or not isinstance(choices[0], dict):
-        raise AnalyzeError(f"OpenAI 接口返回格式不认识：{str(data)[:500]}")
-    choice = choices[0]
-    message = choice.get("message", {})
-    report = _openai_content(message) if isinstance(message, dict) else ""
+    report, finish_reason = _request("max_tokens")
     if not report:
-        # 某些推理模型兼容端点使用 reasoning_content 字段返回正文。
-        report = str(message.get("reasoning_content", "")).strip() if isinstance(message, dict) else ""
-    if not report:
-        raise AnalyzeError(f"OpenAI 接口返回了空内容：{str(data)[:500]}")
-    finish_reason = choice.get("finish_reason", "")
+        raise AnalyzeError("OpenAI 接口返回了空内容")
     log(f"  [openai] 完成：输出 {len(report)} 字符（finish_reason={finish_reason}）")
     if finish_reason == "length":
         report += "\n\n> ⚠️ 输出因达到 token 上限被截断，建议调大 WOODPECKER_MAX_TOKENS 后重跑。"

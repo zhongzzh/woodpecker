@@ -1,0 +1,24 @@
+phantom	using TyImageProcessing
+using BenchmarkTools
+
+first_run_time = @elapsed begin
+   P, = phantom("Modified Shepp-Logan", 200);
+end
+
+second_run_time = @belapsed begin
+   P, = phantom("Modified Shepp-Logan", 200);
+end
+
+println("首次用时： ",first_run_time)
+println("二次用时： ",second_run_time)
+##########   MATLAB  ############
+tic;
+P = phantom('Modified Shepp-Logan',200);
+first_run_time = toc;
+
+tic;
+P = phantom('Modified Shepp-Logan',200);
+second_run_time = toc;
+
+fprintf("首次用时：%.6f\n ",first_run_time)
+fprintf("二次用时：%.6f\n ",second_run_time)	0.1756477	0.0016018	0.02874	0.003788	6.111610995	0.422861668

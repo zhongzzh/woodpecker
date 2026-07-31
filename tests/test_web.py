@@ -19,6 +19,7 @@ from pipeline.web import (
     _public_ai_config,
     _public_gitlab_config,
     _read_index_html,
+    _read_failed_steps,
     _resolve_local_materials,
     _read_resolved_paths,
     _select_local_file,
@@ -28,6 +29,26 @@ from pipeline.web import (
 
 
 class WebArgvTests(unittest.TestCase):
+    def test_failed_steps_are_read_from_completed_task_metadata(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            task = Path(tmp) / "task.json"
+            task.write_text(json.dumps({
+                "coverage_ai_status": "failed",
+                "performance_ai_status": "unparsed",
+            }), encoding="utf-8")
+
+            self.assertEqual(_read_failed_steps(tmp), [3, 4])
+
+    def test_skipped_ai_steps_are_not_reported_as_failures(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            task = Path(tmp) / "task.json"
+            task.write_text(json.dumps({
+                "coverage_ai_status": "skipped",
+                "performance_ai_status": "not_requested",
+            }), encoding="utf-8")
+
+            self.assertEqual(_read_failed_steps(tmp), [])
+
     def test_analysis_process_is_hidden_on_windows(self):
         with patch("pipeline.web.sys.platform", "win32"):
             kwargs = _hidden_process_kwargs()

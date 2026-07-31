@@ -159,6 +159,8 @@
   .step.active .step-dot { border-color:var(--blue); background:var(--blue-soft); box-shadow:0 0 0 4px rgba(44,102,195,.08); }
   .step.done { color:var(--brand); }
   .step.done .step-dot { border-color:var(--brand); background:var(--brand); color:#fff; }
+  .step.failed { color:var(--danger); }
+  .step.failed .step-dot { border-color:var(--danger); background:var(--danger); color:#fff; }
   .step-label { overflow:hidden; text-overflow:ellipsis; white-space:nowrap; font-size:10.5px; font-weight:650; }
   .progress-message { margin:10px 0 0; padding:11px 12px; min-height:42px; border-radius:10px; background:var(--surface-2); color:#5d6b62; font-size:12px; line-height:1.55; }
   .progress-message.error { color:var(--danger); background:var(--danger-soft); }
@@ -669,7 +671,7 @@ $("closeAi").onclick=$("cancelAi").onclick=closeAiDialog;
 $("aiDialog").addEventListener("cancel",e=>{if(!confirmDialogDiscard())e.preventDefault();});
 $("aiDialog").addEventListener("click",e=>{if(e.target===$("aiDialog"))closeAiDialog();});
 $("ai_profile").addEventListener("change",async e=>{const target=e.target.value,previous=aiDraftNew?"__new__":aiConfig?.active_profile_id||"";if(!confirmAiDiscard()){e.target.value=previous;return;}try{const action=target?"activate":"use_default",{data}=await api("/api/ai-config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action,profile_id:target})});if(!data.ok)throw new Error(data.message);await loadAiConfig();toast(target?"已切换公益站配置":"已改用环境变量默认配置");}catch(err){e.target.value=previous;toast(err.message,"error");}});
-$("newAiProfile").onclick=()=>{if(!confirmAiDiscard())return;aiDraftNew=true;populateAiProfiles(aiConfig);$("ai_profile").insertAdjacentHTML("beforeend",'<option value="__new__">新公益站配置</option>');$("ai_profile").value="__new__";$("ai_profile_name").disabled=false;$("ai_profile_name").value="";$("deleteAiProfile").disabled=true;$("saveAi").disabled=false;$("profileState").textContent="尚未保存";$("profileState").className="source-tag";const protocol=aiConfig.default_protocol||"anthropic";$("ai_base").value="";$("ai_timeout").value=aiConfig.default_timeout_seconds||1200;applyProtocolUi(protocol,{...aiConfig,protocol:"",base_url:"",model:"",has_saved_key:false});configureKeyField({has_saved_key:false});setModelOptions([],aiConfig.default_models?.[protocol]||"");setAiMsg("填写名称、端点、Key、模型和超时后保存。","");resetAiTest();aiFormBaseline=aiFormState();$("ai_profile_name").focus();};
+$("newAiProfile").onclick=()=>{if(!confirmAiDiscard())return;aiDraftNew=true;populateAiProfiles(aiConfig);$("ai_profile").insertAdjacentHTML("beforeend",'<option value="__new__">新公益站配置</option>');$("ai_profile").value="__new__";$("ai_profile_name").disabled=false;$("ai_profile_name").value="";$("deleteAiProfile").disabled=true;$("saveAi").disabled=false;$("profileState").textContent="尚未保存";$("profileState").className="source-tag";const protocol="openai";$("ai_base").value="";$("ai_timeout").value=aiConfig.default_timeout_seconds||1200;applyProtocolUi(protocol,{...aiConfig,protocol:"",base_url:"",model:"",has_saved_key:false});configureKeyField({has_saved_key:false});setModelOptions([],aiConfig.default_models?.[protocol]||"");setAiMsg("填写名称、端点、Key、模型和超时后保存。","");resetAiTest();aiFormBaseline=aiFormState();$("ai_profile_name").focus();};
 $("deleteAiProfile").onclick=async()=>{const id=aiConfig?.active_profile_id;if(!id)return;if(!confirm(`确定删除“${aiConfig.name}”吗？此操作会删除该公益站保存的 Key。`))return;try{const {data}=await api("/api/ai-config",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({action:"delete",profile_id:id})});if(!data.ok)throw new Error(data.message);await loadAiConfig();toast("公益站配置已删除");}catch(e){toast(e.message,"error");}};
 document.querySelectorAll('input[name="ai_protocol"]').forEach(input=>input.addEventListener("change",()=>{applyProtocolUi(input.value);setAiMsg(`已切换为 ${input.value==="openai"?"OpenAI":"Anthropic"} 兼容协议，请重新获取模型。`);resetAiTest();}));
 $("officialEndpoint").onclick=()=>{const protocol=selectedProtocol(),isOpenAi=protocol==="openai";$("ai_base").value=isOpenAi?"https://api.openai.com":"https://api.anthropic.com";$("ai_base").focus();setAiMsg(`已填入 ${isOpenAi?"OpenAI":"Anthropic"} 官方端点，获取模型前请确认 Key 可用。`);resetAiTest();};
@@ -711,7 +713,7 @@ $("clearAi").onclick=async()=>{
   catch(e){toast(e.message,"error");}finally{setButtonBusy(btn,false);}
 };
 
-function setStatus(kind,text,message){const badge=$("statusBadge");badge.className="status-badge "+(kind||"");badge.textContent=text;$("progress").className="progress-message "+(kind==="error"?"error":"");$("progress").textContent=message;}
+function setStatus(kind,text,message){const badge=$("statusBadge"),progress=$("progress");badge.className="status-badge "+(kind||"");badge.textContent=text;progress.className="progress-message "+(kind==="error"?"error":"");progress.textContent=message;progress.hidden=!message;}
 function setPasteMsg(text,type=""){$("pasteMsg").textContent=text;$("pasteMsg").className="inline-msg "+type;}
 async function parsePastedInput(auto=false){
   const raw=$("raw_input").value.trim();if(!raw){if(!auto)setPasteMsg("请先粘贴提测内容。","error");return;}
@@ -730,8 +732,9 @@ async function parsePastedInput(auto=false){
 }
 $("parseInput").onclick=()=>parsePastedInput(false);
 $("raw_input").addEventListener("paste",()=>setTimeout(()=>parsePastedInput(true),0));
-function updateSteps(step,complete=false){
-  document.querySelectorAll(".step").forEach(el=>{const n=Number(el.dataset.step),dot=el.querySelector(".step-dot");el.classList.toggle("done",complete||n<step);el.classList.toggle("active",!complete&&n===step);dot.innerHTML=(complete||n<step)?iconCheck:String(n);});
+function updateSteps(step,complete=false,failedSteps=[]){
+  const failed=new Set(failedSteps);
+  document.querySelectorAll(".step").forEach(el=>{const n=Number(el.dataset.step),dot=el.querySelector(".step-dot"),isFailed=failed.has(n),isDone=!isFailed&&(complete||n<step);el.classList.toggle("done",isDone);el.classList.toggle("active",!isFailed&&!complete&&n===step);el.classList.toggle("failed",isFailed);dot.innerHTML=isFailed?"&times;":isDone?iconCheck:String(n);});
 }
 function inferStep(log){let step=0;for(const line of log){const m=line.match(/^\[(\d)\/5\]/);if(m)step=Math.max(step,Number(m[1]));}return step;}
 function renderLogFollow(){const btn=$("logFollow");btn.classList.toggle("paused",!logFollowMode);btn.querySelector("span").textContent=logFollowMode?"跟随最新":"已暂停";btn.title=logFollowMode?"自动跟随最新日志":"点击恢复跟随最新日志";}
@@ -745,8 +748,8 @@ async function poll(){
     if(s.running){updateSteps(step||1);setStatus("running","分析中",step?`正在执行第 ${step} 步，共 5 步。详细过程可在运行日志中查看。`:"任务已启动，正在准备分析环境…");return;}
     if(polling){clearInterval(polling);polling=null;}$("go").disabled=false;
     if(s.stopped){updateSteps(0);setStatus("stopped","已中止","任务已由用户中止，未完成的中间材料已清理。 ");}
-    else if(s.error){updateSteps(step||1);setStatus("error","执行失败",s.error);}
-    else if(s.report_dir){updateSteps(5,true);setStatus("success","已完成","分析已完成，报告已生成并在右侧打开。");await refreshTasks(s.report_dir);}
+    else if(s.error){updateSteps(step||1,false,[step||1]);setStatus("error","执行失败",s.error);}
+    else if(s.report_dir){const failed=s.failed_steps||[];updateSteps(5,true,failed);setStatus(failed.length?"error":"success",failed.length?"部分完成":"已完成",failed.length?"":"分析已完成，报告已生成并在右侧打开。");await refreshTasks(s.report_dir);}
   }catch(e){if(polling){clearInterval(polling);polling=null;}$("go").disabled=false;setStatus("error","连接失败","无法读取任务状态："+e.message);}
 }
 $("stop").onclick=async()=>{if(!confirm("确定中止当前分析吗？未完成的中间材料会被清理。"))return;const btn=$("stop");setButtonBusy(btn,true,"正在中止");try{const {data}=await api("/api/stop",{method:"POST"});if(!data.ok)throw new Error(data.message);setStatus("stopped","正在中止","正在安全停止分析进程…");}catch(e){toast(e.message,"error");}finally{setButtonBusy(btn,false);}};
@@ -791,7 +794,7 @@ document.addEventListener("keydown",e=>{if(!(e.ctrlKey||e.metaKey)||e.key!=="Ent
 // 持久连接用于感知页面生命周期：最后一个页面关闭后，隐藏的本地服务会自动退出。
 if("EventSource" in window) lifecycleConnection=new EventSource("/api/lifecycle");
 syncTaskTypeUi();refreshTasks();loadAiConfig();
-(async()=>{try{const {data:s}=await api("/api/status");updateLog(s.log||[]);if(s.running){$("go").disabled=true;if(!polling)polling=setInterval(poll,1000);poll();}else if(s.report_dir){updateSteps(5,true);setStatus("success","已完成","上一项分析已完成，可在历史报告中打开结果。");}else if(s.error){updateSteps(inferStep(s.log||[])||1);setStatus("error","上次失败",s.error);}}catch(e){setStatus("error","服务异常",e.message);}})();
+(async()=>{try{const {data:s}=await api("/api/status");updateLog(s.log||[]);if(s.running){$("go").disabled=true;if(!polling)polling=setInterval(poll,1000);poll();}else if(s.report_dir){const failed=s.failed_steps||[];updateSteps(5,true,failed);setStatus(failed.length?"error":"success",failed.length?"部分完成":"已完成",failed.length?"":"上一项分析已完成，可在历史报告中打开结果。");}else if(s.error){const step=inferStep(s.log||[])||1;updateSteps(step,false,[step]);setStatus("error","上次失败",s.error);}}catch(e){setStatus("error","服务异常",e.message);}})();
 </script>
 </body>
 </html>

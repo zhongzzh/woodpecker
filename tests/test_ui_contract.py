@@ -57,6 +57,18 @@ class CodeChatUiContractTests(unittest.TestCase):
             self.html,
         )
 
+    def test_failed_progress_steps_use_a_red_cross(self):
+        self.assertIn(".step.failed { color:var(--danger); }", self.html)
+        self.assertIn('dot.innerHTML=isFailed?"&times;"', self.html)
+        self.assertIn('updateSteps(step||1,false,[step||1])', self.html)
+
+    def test_partial_completion_does_not_show_a_redundant_message(self):
+        self.assertNotIn("报告已生成，但标红步骤未完成", self.html)
+        self.assertIn("progress.hidden=!message", self.html)
+
+    def test_new_ai_profile_defaults_to_openai_protocol(self):
+        self.assertIn('const protocol="openai"', self.html)
+
 
 if __name__ == "__main__":
     unittest.main()

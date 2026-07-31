@@ -109,6 +109,7 @@ class _Job:
                 "resolved_paths": self.resolved_paths,
             }
             out_dir = self.out_dir
+        snapshot["failed_steps"] = _read_failed_steps(out_dir)
         if snapshot["resolved_paths"] is None:
             resolved = _read_resolved_paths(out_dir)
             if resolved:
@@ -117,6 +118,23 @@ class _Job:
                         self.resolved_paths = resolved
                 snapshot["resolved_paths"] = resolved
         return snapshot
+
+
+def _read_failed_steps(out_dir: str | None) -> list[int]:
+    """从最终任务元数据中提取已降级但实际未完成的步骤。"""
+    if not out_dir:
+        return []
+    try:
+        task = json.loads((Path(out_dir) / "task.json").read_text(encoding="utf-8"))
+    except (OSError, UnicodeError, json.JSONDecodeError):
+        return []
+
+    failed_steps = []
+    if task.get("coverage_ai_status") == "failed":
+        failed_steps.append(3)
+    if task.get("performance_ai_status") in {"failed", "unparsed"}:
+        failed_steps.append(4)
+    return failed_steps
 
 
 _job = _Job()
