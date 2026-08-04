@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "task": "imsegkmeans-20260803-104307",
+  "updated_at": "2026-08-03T14:50:50",
+  "messages": [
+    {
+      "role": "user",
+      "content": "参数\t完全覆盖项\t文档要求项\t参数结论\nI\tFloat32、Int8、Int16、UInt8、UInt16、二维灰度结构\t五种数据类型、二维灰度、彩色、 多光谱结构\t部分覆盖 ，只把 二维彩色图像 | 二维多光谱图像，这两种情况的补充一下",
+      "created_at": "2026-08-03T14:50:50"
+    },
+    {
+      "role": "assistant",
+      "content": "仅补充文档所称的彩色与多光谱输入结构。代码使用显式的 `m×n×c` 三维数组，并对输入维度、标签矩阵尺寸、中心矩阵尺寸及中心元素类型进行断言；这些 expected 均由实现的维度规则和文档输出定义直接确定。以下代码可追加到测试文件末尾。静态审阅未运行测试。\n\n```julia\n@testset \"imsegkmeans 三维彩色与多光谱输入\" begin\n    @testset \"三维彩色图像 Float32\" begin\n        I = rand(Float32, 8, 7, 3)\n        k = 3\n        L, Centers = imsegkmeans(\n            I,\n            k;\n            NumAttempts=1,\n            MaxIterations=2,\n            Threshold=Float32(0.01),\n        )\n\n        @test ndims(I) == 3\n        @test size(I) == (8, 7, 3)\n        @test size(L) == (8, 7)\n        @test size(Centers) == (k, 3)\n        @test eltype(Centers) == eltype(I)\n    end\n\n    @testset \"三维多光谱图像 Float32\" begin\n        I = rand(Float32, 8, 7, 4)\n        k = 3\n        L, Centers = imsegkmeans(\n            I,\n            k;\n            NumAttempts=1,\n            MaxIterations=2,\n            Threshold=Float32(0.01),\n        )\n\n        @test ndims(I) == 3\n        @test size(I) == (8, 7, 4)\n        @test size(L) == (8, 7)\n        @test size(Centers) == (k, 4)\n        @test eltype(Centers) == eltype(I)\n    end\nend\n```",
+      "created_at": "2026-08-03T14:50:50"
+    }
+  ]
+}

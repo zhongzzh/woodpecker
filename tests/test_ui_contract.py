@@ -19,6 +19,9 @@ class _ElementIndex(HTMLParser):
 
 
 class CodeChatUiContractTests(unittest.TestCase):
+    def test_pasted_submission_fills_extracted_function_name(self):
+        self.assertIn('$("func").value=data.func||""', self.html)
+
     @classmethod
     def setUpClass(cls):
         cls.html = INDEX.read_text(encoding="utf-8")
@@ -68,6 +71,18 @@ class CodeChatUiContractTests(unittest.TestCase):
 
     def test_new_ai_profile_defaults_to_openai_protocol(self):
         self.assertIn('const protocol="openai"', self.html)
+
+    def test_document_only_refresh_is_explicitly_scoped(self):
+        checkbox = self.elements.by_id["refresh_doc_only"]
+
+        self.assertEqual(checkbox["tag"], "input")
+        self.assertEqual(checkbox["type"], "checkbox")
+        self.assertIn(
+            "以远端文档为准，放弃本地冲突和已跟踪改动；不读取代码，不执行 AI 分析",
+            self.html,
+        )
+        self.assertIn("refresh_doc_only:docOnly", self.html)
+        self.assertIn('s.job_mode==="refresh_doc_only"', self.html)
 
 
 if __name__ == "__main__":

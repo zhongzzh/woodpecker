@@ -4,6 +4,24 @@ from pipeline.paste import PasteParseError, parse_submission_text
 
 
 class PasteInputTests(unittest.TestCase):
+    def test_generic_submission_title_extracts_name_and_function(self):
+        text = (
+            "【提测】图像处理工具箱函数 imtophat 中使用Julia替代python依赖提测 "
+            "代码 https://git.tongyuan.cc/syslab/packages/image/"
+            "TyImageProcessing.jl/-/merge_requests/1 "
+            "文档 https://git.tongyuan.cc/syslab/syslab-docs-2.0/"
+            "-/merge_requests/2"
+        )
+
+        result = parse_submission_text(text)
+
+        self.assertEqual(
+            result["name"],
+            "【提测】图像处理工具箱函数 imtophat 中使用Julia替代python依赖提测",
+        )
+        self.assertEqual(result["func"], "imtophat")
+        self.assertEqual(result["task_type"], "new_function")
+
     def test_user_provided_encoded_concatenated_text(self):
         text = (
             "https://git.tongyuan.cc/syslab/packages/math/TyDifferentialEquation.jl/-/merge_requests/250"

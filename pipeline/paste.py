@@ -9,6 +9,8 @@ from __future__ import annotations
 import re
 from urllib.parse import unquote
 
+from .taskcard import FUNCTION_NAME_PATTERN, extract_function_name
+
 
 class PasteParseError(ValueError):
     pass
@@ -19,7 +21,7 @@ MR_URL_RE = re.compile(
     re.I,
 )
 
-FUNC = r"[A-Za-z_][A-Za-z0-9_!]*"
+FUNC = FUNCTION_NAME_PATTERN
 TASK_TAIL = rf"(?:新增\s*{FUNC}\s*函数|{FUNC}\s*函数\s*性能优化)"
 FULL_TITLE_RE = re.compile(
     rf"【\s*数学库[^】]*周提测[^】]*】\s*"
@@ -30,6 +32,11 @@ LIBRARY_TASK_RE = re.compile(
     rf"[A-Za-z_][A-Za-z0-9_.]*\s*[：:]\s*{TASK_TAIL}", re.I
 )
 BARE_TASK_RE = re.compile(TASK_TAIL, re.I)
+GENERIC_FUNCTION_TASK_RE = re.compile(
+    rf"【\s*提测\s*】[^\r\n]*?函数(?:名称)?\s*[：:]?\s*{FUNC}\b"
+    rf"[^\r\n]*?提测",
+    re.I,
+)
 
 
 def _decode(text: str) -> str:
@@ -55,7 +62,9 @@ def _unique(items: list[str]) -> list[str]:
 
 
 def _task_name(text: str) -> str:
-    for pattern in (FULL_TITLE_RE, LIBRARY_TASK_RE, BARE_TASK_RE):
+    for pattern in (
+        FULL_TITLE_RE, GENERIC_FUNCTION_TASK_RE, LIBRARY_TASK_RE, BARE_TASK_RE
+    ):
         match = pattern.search(text)
         if match:
             return re.sub(r"\s+", " ", match.group(0)).strip()
@@ -74,7 +83,10 @@ def parse_submission_text(text: str) -> dict:
 
     name = _task_name(decoded)
     if not name:
-        raise PasteParseError("识别到了 MR 链接，但没有识别到新增函数或函数性能优化任务标题")
+        raise PasteParseError(
+            "识别到了 MR 链接，但没有识别到新增函数或函数性能优化任务标题，"
+            "也没有识别到包含函数名的提测标题"
+        )
 
     doc_urls = [url for url in urls if "/syslab/syslab-docs-2.0/-/merge_requests/" in url]
     code_urls = [url for url in urls if url not in doc_urls]
@@ -92,6 +104,7 @@ def parse_submission_text(text: str) -> dict:
 
     return {
         "name": name,
+        "func": extract_function_name(name),
         "code_mr": code_urls[0],
         "doc_mr": doc_urls[0] if doc_urls else "",
         "task_type": task_type,

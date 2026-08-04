@@ -250,6 +250,18 @@ class WebArgvTests(unittest.TestCase):
         })
         self.assertIn("--build-doc-html", argv)
 
+    def test_document_only_refresh_emits_dedicated_argument(self):
+        argv = _build_argv({
+            "input_mode": "local",
+            "name": "graydiffweight",
+            "local_library": "TyImageProcessing",
+            "local_branch": "pyh/add_graydiffweight",
+            "refresh_doc_only": True,
+        })
+        self.assertIn("--refresh-doc-only", argv)
+        self.assertNotIn("--code-mr", argv)
+        self.assertNotIn("--build-doc-html", argv)
+
 
 class TaskHistoryTests(unittest.TestCase):
     def test_reports_are_sorted_by_generation_time_instead_of_function_name(self):

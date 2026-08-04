@@ -1,0 +1,14 @@
+roicolor	using TyImageProcessing
+using TyBase
+
+X = load(pkgdir(TyImageProcessing) * "/resources/trees_tif_X.mat")["X"];
+map = load(pkgdir(TyImageProcessing) * "/resources/trees_tif_map.mat")["map"];
+imshow(X, map)
+
+roicolor(X, 10, 20);
+
+##########   MATLAB  ############
+load trees
+imshow(X,map)
+
+roicolor(X,10,20);	0.397031	0.000096	0.092794	0.006921	4.278627929	0.013870828

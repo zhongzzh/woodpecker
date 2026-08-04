@@ -16,6 +16,27 @@ from urllib.parse import urlparse
 from . import config
 
 
+FUNCTION_NAME_PATTERN = r"[A-Za-z_][A-Za-z0-9_!]*"
+
+
+def extract_function_name(text: str) -> str:
+    """从函数名或完整提测标题中提取 ASCII 函数标识符。"""
+    value = text.strip()
+    if re.fullmatch(FUNCTION_NAME_PATTERN, value):
+        return value
+    patterns = (
+        rf"新增\s*(?P<func>{FUNCTION_NAME_PATTERN})\s*函数",
+        rf"(?P<func>{FUNCTION_NAME_PATTERN})\s*(?:函数)?\s*性能优化",
+        rf"函数(?:名称)?\s*[：:]?\s*(?P<func>{FUNCTION_NAME_PATTERN})\b",
+        rf"(?P<func>{FUNCTION_NAME_PATTERN})\s*函数",
+    )
+    for pattern in patterns:
+        match = re.search(pattern, value, re.IGNORECASE)
+        if match:
+            return match.group("func")
+    return ""
+
+
 @dataclass
 class TaskCard:
     """任务输入 + 自动推导的任务类型、函数名与仓库信息。"""
@@ -42,25 +63,18 @@ class TaskCard:
             self.task_type = "new_function"
         elif self.is_local:
             self.task_type = "local_analysis"
+        elif "提测" in self.name and extract_function_name(self.name):
+            self.task_type = "new_function"
         else:
             raise ValueError(
-                "无法从任务名识别任务类型；当前支持“新增 xxx 函数”和“xxx 函数性能优化”："
+                "无法从任务名识别任务类型；当前支持新增函数、函数性能优化和包含函数名的提测标题："
                 f"{self.name!r}"
             )
 
+        if self.func:
+            self.func = extract_function_name(self.func) or self.func.strip()
         if not self.func:
-            # 完整周提测标题可能先出现库名，必须围绕任务关键词提取函数名，
-            # 避免误把 TyDifferentialEquation 等库名当函数名。
-            if self.task_type == "new_function":
-                m = re.search(r"新增\s*([A-Za-z_][A-Za-z0-9_!]*)\s*函数", self.name)
-            elif self.task_type == "performance_optimization":
-                m = re.search(
-                    r"([A-Za-z_][A-Za-z0-9_!]*)\s*函数?\s*性能优化", self.name
-                )
-            else:
-                m = re.search(r"([A-Za-z_][A-Za-z0-9_!]*)\s*函数", self.name)
-            if m:
-                self.func = m.group(1)
+            self.func = extract_function_name(self.name)
 
         if not self.func and self.is_local:
             if re.fullmatch(r"[A-Za-z_][A-Za-z0-9_!]*", self.name.strip()):

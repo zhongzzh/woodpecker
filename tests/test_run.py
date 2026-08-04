@@ -5,11 +5,45 @@ from pathlib import Path
 from unittest.mock import ANY, patch
 
 from pipeline import analyze, config
-from pipeline.run import run
+from pipeline.run import _leadership_summary, refresh_and_build_document, run
 from pipeline.taskcard import TaskCard
 
 
 ROOT = Path(__file__).resolve().parents[1]
+
+
+class LeadershipSummaryTests(unittest.TestCase):
+    def test_new_function_summary_uses_task_name_and_fixed_copyable_format(self):
+        card = TaskCard(
+            name=(
+                "【数学库2026.7月第四周周提测】"
+                "tycomputationalgeometryplot：新增trisurf函数"
+            ),
+            code_mr=(
+                "https://git.tongyuan.cc/syslab/packages/math/"
+                "tycomputationalgeometryplot.jl/-/merge_requests/24"
+            ),
+            doc_mr=(
+                "https://git.tongyuan.cc/syslab/syslab-docs-2.0/"
+                "-/merge_requests/3850"
+            ),
+        )
+        perf_result = {
+            "mode": "pasted",
+            "verdict": "性能首次不通过，二次通过",
+        }
+
+        summary = _leadership_summary(card, perf_result)
+
+        self.assertEqual(
+            summary,
+            "【数学库2026.7月第四周周提测】"
+            "tycomputationalgeometryplot：新增trisurf函数，"
+            "功能单点验证通过，性能验证首次不通过，二次通过\n"
+            "测试环境：windows\n"
+            "测试项：新增trisurf函数\n"
+            "遗留缺陷：无",
+        )
 
 
 class PerformanceOptimizationPipelineTests(unittest.TestCase):
@@ -70,6 +104,65 @@ class PerformanceOptimizationPipelineTests(unittest.TestCase):
 
 
 class LocalMaterialPipelineTests(unittest.TestCase):
+    def test_document_only_mode_forces_pull_builds_and_skips_code_and_ai(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            docs_repo = Path(tmp) / config.DOCS_REPO_NAME
+            doc_relative = (
+                "syslabHelpSourceCode/projects/TyImageProcessing/Doc/"
+                "TyImageProcessing/graydiffweight.md"
+            )
+            doc_file = docs_repo / Path(*doc_relative.split("/"))
+            doc_file.parent.mkdir(parents=True)
+            doc_file.write_text("# graydiffweight", encoding="utf-8")
+            card = TaskCard(
+                name="graydiffweight", input_mode="local",
+                local_library="TyImageProcessing",
+                local_branch="pyh/add_graydiffweight",
+            )
+            preview = {
+                "project": "TyImageProcessing",
+                "html": str(Path(tmp) / "graydiffweight.html"),
+                "url": "file:///graydiffweight.html",
+                "browser_opened": True,
+            }
+
+            with (
+                patch.object(config, "DOCS_REPO_DIR", docs_repo),
+                patch(
+                    "pipeline.run.repo.ensure_repo", return_value=docs_repo
+                ) as ensure,
+                patch(
+                    "pipeline.run.repo.force_sync_branch",
+                    return_value={"forced": True},
+                ) as force_sync,
+                patch(
+                    "pipeline.run.doc_html.build_and_open", return_value=preview
+                ) as build,
+                patch(
+                    "pipeline.run.locate.find_local_library_repo",
+                    side_effect=AssertionError("不应读取代码仓库"),
+                ),
+                patch(
+                    "pipeline.run.analyze.coverage_analysis",
+                    side_effect=AssertionError("不应执行 AI 分析"),
+                ),
+            ):
+                result = refresh_and_build_document(
+                    card, log=lambda _message: None
+                )
+
+            ensure.assert_called_once_with(
+                config.DOCS_REPO_PROJECT, log=ANY, local_path=docs_repo
+            )
+            force_sync.assert_called_once_with(
+                docs_repo, "pyh/add_graydiffweight", log=ANY,
+            )
+            build.assert_called_once_with(
+                docs_repo, doc_relative, "graydiffweight", log=ANY
+            )
+            self.assertEqual(result["documents"], [str(doc_file.resolve())])
+            self.assertEqual(result["preview"], preview)
+
     def test_manual_local_paths_can_build_document_html(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
@@ -325,6 +418,12 @@ class LocalMaterialPipelineTests(unittest.TestCase):
                 "功能验证通过，性能首次不通过，二次通过，请补充自动化脚本",
                 report,
             )
+            self.assertIn(
+                "检查本地材料，功能单点验证通过，"
+                "性能验证首次不通过，二次通过",
+                report,
+            )
+            self.assertTrue(report.endswith("遗留缺陷：无\n```\n"))
             self.assertIn("## 二、性能测试判定（AI，仅当前函数）", report)
             task = json.loads(
                 (report_path.parent / "task.json").read_text(encoding="utf-8")

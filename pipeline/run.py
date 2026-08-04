@@ -118,6 +118,68 @@ def _summary_email(
     return "\n".join(lines)
 
 
+def _leadership_summary(
+    card: TaskCard, perf_result: dict | None,
+    performance_performed: bool = True,
+    functional_performed: bool = True,
+) -> str:
+    """生成报告末尾可直接复制给上级的固定格式结论。"""
+    functional_text = (
+        "功能单点验证通过" if functional_performed else "功能单点验证未进行"
+    )
+    performance_text = _performance_email_text(
+        perf_result, performance_performed
+    )
+    if performance_text in ("性能通过", "性能不通过") or performance_text.startswith(
+        "性能首次"
+    ):
+        performance_text = f"性能验证{performance_text.removeprefix('性能')}"
+    if card.is_new_function:
+        test_item = f"新增{card.func}函数"
+    elif card.is_performance_optimization:
+        test_item = f"{card.func}函数性能优化"
+    else:
+        test_item = card.name.strip()
+    return "\n".join([
+        f"{card.name}，{functional_text}，"
+        f"{performance_text}",
+        "测试环境：windows",
+        f"测试项：{test_item}",
+        "遗留缺陷：无",
+    ])
+
+
+def refresh_and_build_document(card: TaskCard, log=_log) -> dict:
+    """强制更新文档分支并编译函数 HTML，不进入代码与分析流程。"""
+    if not card.is_local or not card.uses_local_repositories:
+        raise ValueError("仅更新文档模式需要函数名、函数库名称和源分支")
+
+    log(f"文档更新任务: {card.func}（函数库 {card.local_library}）")
+    docs_repo = repo.ensure_repo(
+        config.DOCS_REPO_PROJECT, log=log, local_path=config.DOCS_REPO_DIR
+    )
+    log(f"[文档更新] 以远端为准强制同步文档分支 {card.local_branch}")
+    branch_info = repo.force_sync_branch(
+        docs_repo, card.local_branch, log=log
+    )
+    doc_files = locate.find_local_docs(
+        str(docs_repo), card.func, log=log,
+        preferred_project=card.local_library,
+    )
+    doc_relative = doc_files[0].relative_to(docs_repo).as_posix()
+    log("[文档编译] 编译并打开函数 HTML")
+    preview = doc_html.build_and_open(
+        docs_repo, doc_relative, card.func, log=log
+    )
+    log(f"文档更新完成: {doc_files[0]}")
+    return {
+        "repository": str(docs_repo),
+        "branch": branch_info,
+        "documents": [str(path) for path in doc_files],
+        "preview": preview,
+    }
+
+
 def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
         doc_branch: str = "", code_branch: str = "",
         perf_report_text: str = "", log=_log) -> Path:
@@ -454,6 +516,9 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
         [unit["main"], *unit["companions"]] if card.is_local else None,
         local_doc_files if card.is_local else None,
     )
+    leadership_summary = _leadership_summary(
+        card, perf_result, performance_performed, functional_performed
+    )
     if card.is_local and performance_ai_status in ("completed", "unparsed"):
         performance_heading = "## 二、性能测试判定（AI，仅当前函数）"
     elif card.is_local:
@@ -468,6 +533,8 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
         perf_md,
         "## 三、总结邮件格式（可直接复制）",
         f"```text\n{summary_email}\n```",
+        "## 四、上级汇报格式（可直接复制）",
+        f"```text\n{leadership_summary}\n```",
     ]) + "\n"
     report_path = out_dir / "分析报告.md"
     report_path.write_text(report, encoding="utf-8")
@@ -543,6 +610,10 @@ def main() -> None:
         "--build-doc-html", action="store_true",
         help="编译新增函数的帮助文档并在浏览器中打开",
     )
+    ap.add_argument(
+        "--refresh-doc-only", action="store_true",
+        help="强制拉取文档分支并编译 HTML；不读取代码、不执行 AI 分析",
+    )
     ap.add_argument("--doc-branch", default="",
                     help="人工指定文档源分支（降级模式：MR 页面读不了时用，03-A 预案）")
     ap.add_argument("--code-branch", default="",
@@ -557,18 +628,23 @@ def main() -> None:
             input_mode=input_mode, local_code=args.local_code, local_doc=args.local_doc,
             local_library=args.local_library, local_branch=args.local_branch,
         )
-        perf_report_text = ""
-        if args.perf_report_file:
-            perf_path = locate.local_file(args.perf_report_file, "性能报告文件")
-            perf_report_text = perf_path.read_text(encoding="utf-8", errors="replace")
-        run(
-            card, skip_ai=args.no_ai, build_doc_html=args.build_doc_html,
-            doc_branch=args.doc_branch,
-            code_branch=args.code_branch, perf_report_text=perf_report_text,
-        )
+        if args.refresh_doc_only:
+            refresh_and_build_document(card)
+        else:
+            perf_report_text = ""
+            if args.perf_report_file:
+                perf_path = locate.local_file(args.perf_report_file, "性能报告文件")
+                perf_report_text = perf_path.read_text(
+                    encoding="utf-8", errors="replace"
+                )
+            run(
+                card, skip_ai=args.no_ai, build_doc_html=args.build_doc_html,
+                doc_branch=args.doc_branch,
+                code_branch=args.code_branch, perf_report_text=perf_report_text,
+            )
     except (
         repo.GitError, mr.MrError, locate.LocateError, perf.PerfError,
-        analyze.AnalyzeError, ValueError,
+        analyze.AnalyzeError, doc_html.DocHtmlError, ValueError,
     ) as e:
         # 已知失败场景给人话提示（docs/07 §3），意外异常仍抛 traceback 便于排查
         print(f"❌ {e}", flush=True)

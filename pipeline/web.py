@@ -90,6 +90,8 @@ class _Job:
         self.stopped = False          # 是否被用户中止
         self.log_lines: list[str] = []
         self.error: str | None = None
+        self.completed = False
+        self.job_mode = "analysis"
         self.report_dir: str | None = None
         self.out_dir: str | None = None  # 本次运行的产出目录（从日志解析）
         self.resolved_paths: dict | None = None
@@ -105,6 +107,8 @@ class _Job:
                 "stopped": self.stopped,
                 "log": list(self.log_lines),
                 "error": self.error,
+                "completed": self.completed,
+                "job_mode": self.job_mode,
                 "report_dir": self.report_dir,
                 "resolved_paths": self.resolved_paths,
             }
@@ -242,6 +246,8 @@ def _build_argv(payload: dict) -> list[str]:
         argv += ["--no-ai"]
     if payload.get("build_doc_html"):
         argv += ["--build-doc-html"]
+    if payload.get("refresh_doc_only"):
+        argv += ["--refresh-doc-only"]
     if payload.get("perf_report_file", "").strip():
         argv += ["--perf-report-file", payload["perf_report_file"].strip()]
     return argv
@@ -465,6 +471,10 @@ def _start_job(payload: dict) -> tuple[bool, str]:
         _job.stopped = False
         _job.log_lines = []
         _job.error = None
+        _job.completed = False
+        _job.job_mode = (
+            "refresh_doc_only" if payload.get("refresh_doc_only") else "analysis"
+        )
         _job.report_dir = None
         _job.out_dir = None
         _job.resolved_paths = None
@@ -495,8 +505,8 @@ def _start_job(payload: dict) -> tuple[bool, str]:
             temp_perf_path.unlink(missing_ok=True)
         with _job.lock:
             _job.running = False
-            _job.error = f"启动分析子进程失败: {e}"
-        return False, f"启动分析子进程失败: {e}"
+            _job.error = f"启动任务子进程失败: {e}"
+        return False, f"启动任务子进程失败: {e}"
 
     with _job.lock:
         _job.proc = proc
@@ -521,10 +531,14 @@ def _start_job(payload: dict) -> tuple[bool, str]:
         elif code == 0 and out_dir:
             with _job.lock:
                 _job.report_dir = os.path.basename(out_dir)
+                _job.completed = True
+        elif code == 0:
+            with _job.lock:
+                _job.completed = True
         else:
             with _job.lock:
                 last = next((ln for ln in reversed(_job.log_lines) if ln.strip()), "")
-                _job.error = last or f"分析子进程异常退出（exit={code}）"
+                _job.error = last or f"任务子进程异常退出（exit={code}）"
             _cleanup_partial_output(out_dir)
         with _job.lock:
             _job.running = False
@@ -827,7 +841,7 @@ class Handler(BaseHTTPRequestHandler):
             if _job.snapshot()["running"]:
                 self._json({
                     "ok": False,
-                    "message": "当前分析仍在运行，不能重启本地服务",
+                    "message": "当前任务仍在运行，不能重启本地服务",
                 }, 409)
             else:
                 self._json({"ok": True, "message": "本地服务正在重启"})
@@ -846,11 +860,18 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": False, "message": str(e)}, 400)
         elif path == "/api/run":
             input_mode = str(payload.get("input_mode", "remote")).strip().lower() or "remote"
+            refresh_doc_only = bool(payload.get("refresh_doc_only"))
+            if refresh_doc_only and input_mode != "local":
+                self._json({
+                    "ok": False,
+                    "message": "仅更新文档功能只支持本地材料的仓库模式",
+                }, 400)
+                return
             if input_mode == "local":
                 repository_mode = bool(str(payload.get("local_branch", "")).strip())
                 required = (
                     ("name", "local_library", "local_branch")
-                    if repository_mode
+                    if repository_mode or refresh_doc_only
                     else ("name", "local_library", "local_code", "local_doc")
                 )
             else:

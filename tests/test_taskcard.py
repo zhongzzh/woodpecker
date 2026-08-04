@@ -5,6 +5,35 @@ from pipeline.taskcard import TaskCard
 
 
 class TaskCardTests(unittest.TestCase):
+    def test_complete_submission_title_extracts_function_after_function_word(self):
+        card = TaskCard(
+            name=(
+                "【提测】图像处理工具箱函数 imtophat 中使用Julia替代"
+                "python依赖提测"
+            ),
+            code_mr=(
+                "https://git.tongyuan.cc/syslab/packages/image/"
+                "TyImageProcessing.jl/-/merge_requests/1"
+            ),
+            doc_mr=(
+                "https://git.tongyuan.cc/syslab/syslab-docs-2.0/"
+                "-/merge_requests/1"
+            ),
+        )
+        self.assertEqual(card.name, "【提测】图像处理工具箱函数 imtophat 中使用Julia替代python依赖提测")
+        self.assertEqual(card.func, "imtophat")
+        self.assertEqual(card.task_type, "new_function")
+
+    def test_function_field_also_accepts_complete_submission_title(self):
+        card = TaskCard(
+            name="检查本地材料",
+            func="【提测】图像处理工具箱函数 imtophat 中使用Julia替代python依赖提测",
+            input_mode="local",
+            local_code="code",
+            local_doc="docs",
+        )
+        self.assertEqual(card.func, "imtophat")
+
     def test_performance_optimization_needs_no_doc_mr(self):
         card = TaskCard(
             name="【数学库2026.7月第二周周提测】TyDifferentialEquation：ode89 函数性能优化",

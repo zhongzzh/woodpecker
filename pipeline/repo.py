@@ -1,7 +1,9 @@
 """git 只读取数（docs/06 流程；docs/02 D17/D18）。
 
-只读边界在本模块物理强制：仅封装 clone / fetch / checkout / pull / stash。
-本模块【不实现】push、commit、reset --hard、clean 等任何改写历史或远端的操作。
+只读边界在本模块物理强制：普通流程仅封装 clone / fetch / checkout / pull / stash。
+本模块【不实现】push、commit、clean 等任何改写历史、远端或删除无关文件的操作。
+唯一例外是用户显式勾选“仅强制更新并编译文档”时，允许对文档仓库执行
+``reset --hard``，让已跟踪内容以远端分支为唯一准则。
 """
 
 from __future__ import annotations
@@ -82,11 +84,15 @@ def read_text_at_revision(repo: Path, revision: str, path: str) -> str:
     return proc.stdout
 
 
-def prepare_branch(repo: Path, branch: str, log=print) -> dict:
+def prepare_branch(
+    repo: Path, branch: str, log=print, require_pull: bool = False
+) -> dict:
     """fetch → (必要时 stash) → checkout → pull。返回操作记录。
 
     - 工作区有未提交改动且阻碍切换时，用 stash 暂存（不丢弃，可 stash pop 还原）。
-    - 源分支已在远端删除（MR 已合并）时 pull 失败不致命，使用本地已有分支。
+    - 源分支已在远端删除（MR 已合并）时 pull 失败默认不致命，使用本地已有分支。
+    - ``require_pull`` 用于用户明确要求强制更新的场景；pull 失败时直接报错，
+      不把本地旧版本当作更新成功。
     """
     record: dict = {"repo": str(repo), "branch": branch, "stashed": False, "pulled": False}
 
@@ -137,12 +143,56 @@ def prepare_branch(repo: Path, branch: str, log=print) -> dict:
     if pull.returncode == 0:
         record["pulled"] = True
     else:
+        detail = (
+            pull.stderr.strip().splitlines()[-1]
+            if pull.stderr.strip() else "未知原因"
+        )
+        if require_pull:
+            raise GitError(f"强制拉取分支 {branch} 失败：{detail}")
         # 典型场景：MR 已合并、远端分支已删除 —— 用本地分支即可
-        log(f"  pull 未成功（{pull.stderr.strip().splitlines()[-1] if pull.stderr.strip() else '未知原因'}），使用本地分支")
+        log(f"  pull 未成功（{detail}），使用本地分支")
 
     record["head"] = _git(repo, "log", "-1", "--format=%h %s").stdout.strip()
     log(f"  就位: {branch} @ {record['head']}")
     return record
+
+
+def force_sync_branch(repo: Path, branch: str, log=print) -> dict:
+    """强制让工作区与 ``origin/branch`` 一致，忽略本地冲突和已跟踪改动。
+
+    这是文档专用模式的显式破坏性操作。先获取并验证远端分支，再清理当前
+    Git 操作状态；因此远端不可用时不会先破坏本地内容。未跟踪且不阻碍
+    checkout 的文件会保留，函数不会执行 ``git clean``。
+    """
+    remote_ref = f"refs/remotes/origin/{branch}"
+    refspec = f"+refs/heads/{branch}:{remote_ref}"
+    fetch = _git(repo, "fetch", "origin", refspec, check=False)
+    if fetch.returncode != 0:
+        detail = fetch.stderr.strip() or fetch.stdout.strip() or "未知原因"
+        raise GitError(f"获取远端文档分支 {branch} 失败：{detail}")
+    if _git(
+        repo, "show-ref", "--verify", "--quiet", remote_ref, check=False
+    ).returncode != 0:
+        raise GitError(f"远端文档分支不存在：origin/{branch}")
+
+    log("  放弃文档仓库本地冲突和已跟踪改动，以远端分支为准")
+    _git(repo, "reset", "--hard")
+    # reset 通常已清除 merge/cherry-pick 状态；这些 abort 兼容仍残留的操作。
+    for operation in ("merge", "rebase", "cherry-pick", "revert"):
+        _git(repo, operation, "--abort", check=False)
+    _git(repo, "reset", "--hard")
+    _git(repo, "checkout", "-f", "-B", branch, f"origin/{branch}")
+    _git(repo, "reset", "--hard", f"origin/{branch}")
+
+    head = _git(repo, "log", "-1", "--format=%h %s").stdout.strip()
+    log(f"  已强制对齐: origin/{branch} @ {head}")
+    return {
+        "repo": str(repo),
+        "branch": branch,
+        "remote_ref": f"origin/{branch}",
+        "head": head,
+        "forced": True,
+    }
 
 
 def diff_added_files(repo: Path, base: str) -> list[str]:

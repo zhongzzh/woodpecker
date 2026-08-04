@@ -65,6 +65,26 @@ class EnsureRepoTests(unittest.TestCase):
 
 
 class PrepareBranchTests(unittest.TestCase):
+    def test_required_pull_failure_does_not_use_stale_local_branch(self):
+        def fake_git(_repo, *args, check=True):
+            if args[0] == "show-ref":
+                returncode = 0 if args[-1].startswith("refs/heads/") else 1
+                return CompletedProcess(["git", *args], returncode, "", "")
+            if args[0] == "pull":
+                return CompletedProcess(
+                    ["git", *args], 1, "", "remote branch unavailable"
+                )
+            return CompletedProcess(["git", *args], 0, "", "")
+
+        with patch("pipeline.repo._git", side_effect=fake_git):
+            with self.assertRaisesRegex(
+                repo.GitError, "强制拉取分支 docs/update 失败"
+            ):
+                repo.prepare_branch(
+                    Path("example"), "docs/update",
+                    log=lambda _message: None, require_pull=True,
+                )
+
     def test_missing_branch_does_not_stash_dirty_worktree(self):
         calls = []
 
@@ -118,6 +138,67 @@ class PrepareBranchTests(unittest.TestCase):
         self.assertTrue(result["stashed"])
         self.assertEqual(checkout_count, 2)
         self.assertTrue(any(args[0] == "stash" for args in calls))
+
+
+class ForceSyncBranchTests(unittest.TestCase):
+    def test_fetch_failure_does_not_discard_local_state(self):
+        calls = []
+
+        def fake_git(_repo, *args, check=True):
+            calls.append(args)
+            return CompletedProcess(
+                ["git", *args], 1, "", "network unavailable"
+            )
+
+        with patch("pipeline.repo._git", side_effect=fake_git):
+            with self.assertRaisesRegex(
+                repo.GitError, "获取远端文档分支 docs/update 失败"
+            ):
+                repo.force_sync_branch(
+                    Path("example"), "docs/update", log=lambda _message: None
+                )
+
+        self.assertEqual(calls[0][:2], ("fetch", "origin"))
+        self.assertFalse(any(args[0] == "reset" for args in calls))
+        self.assertFalse(any(args[0] == "checkout" for args in calls))
+
+    def test_remote_branch_replaces_conflicted_tracked_content(self):
+        calls = []
+
+        def fake_git(_repo, *args, check=True):
+            calls.append(args)
+            if args[0] == "log":
+                return CompletedProcess(
+                    ["git", *args], 0, "abc123 remote docs\n", ""
+                )
+            return CompletedProcess(["git", *args], 0, "", "")
+
+        with patch("pipeline.repo._git", side_effect=fake_git):
+            result = repo.force_sync_branch(
+                Path("example"), "docs/update", log=lambda _message: None
+            )
+
+        self.assertEqual(
+            calls[0],
+            (
+                "fetch", "origin",
+                "+refs/heads/docs/update:refs/remotes/origin/docs/update",
+            ),
+        )
+        self.assertIn(("reset", "--hard"), calls)
+        self.assertIn(
+            (
+                "checkout", "-f", "-B", "docs/update",
+                "origin/docs/update",
+            ),
+            calls,
+        )
+        self.assertIn(
+            ("reset", "--hard", "origin/docs/update"), calls
+        )
+        self.assertFalse(any(args[0] in {"pull", "stash", "clean"} for args in calls))
+        self.assertEqual(result["head"], "abc123 remote docs")
+        self.assertTrue(result["forced"])
 
 
 if __name__ == "__main__":
