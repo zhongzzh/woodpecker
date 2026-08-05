@@ -1,0 +1,43 @@
+{
+  "name": "iztrans",
+  "func": "iztrans",
+  "task_type": "local_analysis",
+  "input_mode": "local",
+  "code_mr": null,
+  "doc_mr": null,
+  "local_code": "C:\\Users\\TR\\Desktop\\doc\\TySymbolicMath.jl\\test\\Symbolic Math\\Calculus\\Transforms\\iztrans.jl",
+  "local_doc": "C:\\Users\\TR\\Desktop\\doc\\syslab-docs-2.0\\syslabHelpSourceCode\\projects\\MultiLanguage\\Doc\\MultiLanguage\\TyMLang\\Functions\\SymbolicMathToolbox\\Mathematics\\iztrans.md",
+  "local_code_input": "C:/Users/TR/Desktop/doc/TySymbolicMath.jl",
+  "local_doc_input": "C:/Users/TR/Desktop/doc/syslab-docs-2.0",
+  "local_library": "TySymbolicMath",
+  "local_branch": "",
+  "local_code_files": [
+    "C:\\Users\\TR\\Desktop\\doc\\TySymbolicMath.jl\\test\\Symbolic Math\\Calculus\\Transforms\\iztrans.jl",
+    "C:\\Users\\TR\\Desktop\\doc\\TySymbolicMath.jl\\src\\Symbolic Math\\Calculus\\Transforms\\iztrans.jl"
+  ],
+  "local_doc_files": [
+    "C:\\Users\\TR\\Desktop\\doc\\syslab-docs-2.0\\syslabHelpSourceCode\\projects\\MultiLanguage\\Doc\\MultiLanguage\\TyMLang\\Functions\\SymbolicMathToolbox\\Mathematics\\iztrans.md",
+    "C:\\Users\\TR\\Desktop\\doc\\syslab-docs-2.0\\syslabHelpSourceCode\\projects\\TySymbolicMath\\Doc\\TySymbolicMath\\SymbolicMath\\Calculus\\Transforms\\iztrans.md"
+  ],
+  "code_branch": "本地文件",
+  "doc_branch": "本地文件",
+  "doc_md": "iztrans.md",
+  "unit_test": "test/Symbolic Math/Calculus/Transforms/iztrans.jl",
+  "benchmark": null,
+  "doc_html_project": null,
+  "doc_html": null,
+  "doc_html_url": null,
+  "doc_html_requested": false,
+  "doc_html_browser_opened": false,
+  "doc_html_error": null,
+  "perf_note_heading": null,
+  "pasted_performance_report": false,
+  "coverage_ai_status": "completed",
+  "coverage_ai_error": null,
+  "performance_ai_status": "not_requested",
+  "performance_ai_error": null,
+  "performance_ai_response_file": null,
+  "performance_verdict": "本次未进行性能分析",
+  "model": "gpt-5.6-sol",
+  "generated_at": "2026-08-05T10:22:26"
+}

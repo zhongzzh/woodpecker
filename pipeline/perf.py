@@ -1,6 +1,7 @@
-"""性能判定（docs/02 D13/D15/D16/D23~D28；样例结构见 docs/05、08）。
+"""性能判定（docs/02 D13/D15/D16/D23~D28/D37；样例结构见 docs/05、08）。
 
-输入：mr.py 抓取的最新性能报告中「分支版本详细数据」表（headers + rows）。
+输入：mr.py 按当前函数筛选后所得最新性能报告中的「分支版本详细数据」表
+（headers + rows）。
 规则（新增函数，参照系 = MATLAB）：
   对每个用法检查两项，均须达标（D15，首次无 JIT 豁免）：
     首次: T = m_execute_time_first,   x = execute_time_first_diff
@@ -58,6 +59,15 @@ class UsageVerdict:
         return bot_pass != self.passed
 
 
+def _checks_by_phase(verdicts):
+    """Yield all first-run checks before all repeated-run checks."""
+    for phase in ("首次", "二次"):
+        for verdict in verdicts:
+            for check in verdict.checks:
+                if check.label == phase:
+                    yield verdict, check
+
+
 def _col(headers: list[str], name: str) -> int:
     try:
         return headers.index(name)
@@ -103,17 +113,17 @@ def render_markdown(result: dict, report_heading: str) -> str:
     lines = [
         "### 性能判定（标准 D13/D15/D16，参照系 MATLAB）",
         "",
-        f"依据报告：{report_heading}（同 MR 最新一条）",
+        f"依据报告：{report_heading}（同 MR 中当前函数的最新一条）",
         "",
         "| 用法 | 检查项 | T=MATLAB耗时(s) | 档位阈值 | x(j/m) | 结论 |",
         "| --- | --- | --- | --- | --- | --- |",
     ]
-    for v in result["verdicts"]:
-        for c in v.checks:
-            verdict = "通过" if c.passed else "**不通过**"
-            lines.append(
-                f"| {v.usage} | {c.label} | {c.t:g} | {c.threshold} | {c.x:.4g} | {verdict} |"
-            )
+    for usage, check in _checks_by_phase(result["verdicts"]):
+        verdict = "通过" if check.passed else "**不通过**"
+        lines.append(
+            f"| {usage.usage} | {check.label} | {check.t:g} | "
+            f"{check.threshold} | {check.x:.4g} | {verdict} |"
+        )
     overall = "✅ 通过" if result["passed"] else "❌ 不通过"
     lines += ["", f"**整体结论：{overall}**（任一用法任一项超标即不通过）"]
 
@@ -333,31 +343,30 @@ def render_optimization_markdown(result: dict, report_heading: str) -> str:
     lines = [
         "### 性能优化衰退判定（标准 D13/D15/D16/D23~D28，参照系：分支/基准 Julia）",
         "",
-        f"依据报告：{report_heading}（同 MR 报告时间最新的一条）",
+        f"依据报告：{report_heading}（同 MR 中当前函数报告时间最新的一条）",
         "",
         "| 用法 | 检查项 | 基准 T(s) | 分支耗时(s) | 报告变化 | x(分支/基准) | 阈值 | 数据来源 | 结论 |",
         "| --- | --- | --- | --- | --- | --- | --- | --- | --- |",
     ]
-    for verdict in result["verdicts"]:
-        for check in verdict.checks:
-            t = "—" if check.t is None else f"{check.t:g}"
-            branch_time = "—" if check.branch_time is None else f"{check.branch_time:g}"
-            x = "—" if check.x is None else f"{check.x:.6g}"
-            threshold = "—" if check.threshold is None else f"{check.threshold:g}"
-            if check.passed is True:
-                conclusion = "未衰退"
-            elif check.passed is False:
-                conclusion = "**发生衰退**"
-            else:
-                conclusion = "**无法判定**"
+    for verdict, check in _checks_by_phase(result["verdicts"]):
+        t = "—" if check.t is None else f"{check.t:g}"
+        branch_time = "—" if check.branch_time is None else f"{check.branch_time:g}"
+        x = "—" if check.x is None else f"{check.x:.6g}"
+        threshold = "—" if check.threshold is None else f"{check.threshold:g}"
+        if check.passed is True:
+            conclusion = "未衰退"
+        elif check.passed is False:
+            conclusion = "**发生衰退**"
+        else:
+            conclusion = "**无法判定**"
+        lines.append(
+            f"| {verdict.usage} | {check.label} | {t} | {branch_time} | "
+            f"{check.change_text} | {x} | {threshold} | {check.source} | {conclusion} |"
+        )
+        if check.warning:
             lines.append(
-                f"| {verdict.usage} | {check.label} | {t} | {branch_time} | "
-                f"{check.change_text} | {x} | {threshold} | {check.source} | {conclusion} |"
+                f"|  |  |  |  |  |  |  | ⚠️ {check.warning} |  |"
             )
-            if check.warning:
-                lines.append(
-                    f"|  |  |  |  |  |  |  | ⚠️ {check.warning} |  |"
-                )
 
     lines += ["", "**逐用法结论：**", ""]
     for verdict in result["verdicts"]:

@@ -37,6 +37,40 @@ class OptimizationPerfTests(unittest.TestCase):
         self.assertFalse(result["verdicts"][0].checks[0].passed)
         self.assertTrue(result["verdicts"][0].checks[1].passed)
 
+    def test_new_function_markdown_groups_first_and_repeated_runs(self):
+        result = {
+            "verdicts": [
+                perf.UsageVerdict(
+                    usage="PT1", name="one",
+                    checks=[
+                        perf.Check("首次", 2.0, 1.0, 1.2, True),
+                        perf.Check("二次", 2.0, 1.0, 1.2, True),
+                    ],
+                    bot_perf_status="pass", passed=True,
+                ),
+                perf.UsageVerdict(
+                    usage="PT2", name="two",
+                    checks=[
+                        perf.Check("首次", 2.0, 1.0, 1.2, True),
+                        perf.Check("二次", 2.0, 1.0, 1.2, True),
+                    ],
+                    bot_perf_status="pass", passed=True,
+                ),
+            ],
+            "passed": True,
+            "bot_mismatch": False,
+        }
+
+        markdown = perf.render_markdown(result, "report")
+
+        positions = [
+            markdown.index("| PT1 | 首次"),
+            markdown.index("| PT2 | 首次"),
+            markdown.index("| PT1 | 二次"),
+            markdown.index("| PT2 | 二次"),
+        ]
+        self.assertEqual(positions, sorted(positions))
+
     def test_threshold_boundaries_follow_syslab_standard(self):
         self.assertEqual(perf.threshold_for(1.000001), 1.2)
         self.assertEqual(perf.threshold_for(1.0), 1.25)
@@ -53,6 +87,26 @@ class OptimizationPerfTests(unittest.TestCase):
         pt1_second = result["verdicts"][0].checks[1]
         self.assertAlmostEqual(pt1_second.x, 0.016)
         self.assertEqual(pt1_second.source, "摘要换算")
+
+    def test_optimization_markdown_groups_first_and_repeated_runs(self):
+        note = make_note(
+            [
+                ("PT1", "one", 2.0, 2.0, 1.0, 1.0),
+                ("PT2", "two", 2.0, 2.0, 1.0, 1.0),
+            ],
+            [],
+        )
+        result = perf.judge_optimization_note(note)
+
+        markdown = perf.render_optimization_markdown(result, note["heading"])
+
+        positions = [
+            markdown.index("| PT1 | 首次"),
+            markdown.index("| PT2 | 首次"),
+            markdown.index("| PT1 | 二次"),
+            markdown.index("| PT2 | 二次"),
+        ]
+        self.assertEqual(positions, sorted(positions))
 
     def test_three_threshold_bands_and_equal_boundary(self):
         note = make_note(

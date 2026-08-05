@@ -334,10 +334,13 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
             _log(f"  使用人工指定分支（降级模式，跳过 MR 页面，无性能报告）: {code_branch}")
             code_info = {"source_branch": code_branch, "perf_note": None}
         else:
-            code_info = mr.read_mr(card.code_mr, log=_log)
+            code_info = mr.read_mr(card.code_mr, log=_log, func=card.func)
         code_repo = repo.ensure_repo(card.code_project, log=_log)
         repo.prepare_branch(code_repo, code_info["source_branch"], log=_log)
-        unit = locate.find_unit_test(code_repo, card.func, log=_log)
+        unit = locate.find_unit_test(
+            code_repo, card.func, log=_log,
+            perf_note=code_info.get("perf_note"),
+        )
         bench = locate.find_benchmark_dir(code_repo, card.func, log=_log)
     test_bundle = locate.read_test_bundle(unit)
     for p in [unit["main"], *unit["companions"]]:

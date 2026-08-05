@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 from . import config
 from . import repo as repo_mod
@@ -230,8 +230,100 @@ def read_existing_doc_md(
     return {"relative_path": hits[0], "text": text, "revision": revision}
 
 
-def find_unit_test(code_repo: Path, func: str, log=print) -> dict:
-    """定位单元测试主文件与伴随数据文件（test/<大类>/<小类>/<func>.jl + <func>_*.jl）。"""
+def _performance_path_contexts(perf_note: dict | None, func: str) -> list[tuple[str, ...]]:
+    """Extract benchmark directory context before ``func`` from report rows."""
+    if not perf_note:
+        return []
+    target = func.casefold()
+    contexts: list[tuple[str, ...]] = []
+    for table in perf_note.get("tables", []):
+        headers = table.get("headers", [])
+        indices = {name: index for index, name in enumerate(headers)}
+        path_indices = [
+            indices[name] for name in ("git_file", "benchmark_path")
+            if name in indices
+        ]
+        func_index = indices.get("func_name")
+        for row in table.get("rows", []):
+            if (
+                func_index is not None
+                and func_index < len(row)
+                and str(row[func_index]).strip().casefold() != target
+            ):
+                continue
+            for path_index in path_indices:
+                if path_index >= len(row):
+                    continue
+                raw_path = str(row[path_index]).strip()
+                if not raw_path or raw_path.casefold() == "nan":
+                    continue
+                parts = PurePosixPath(raw_path.replace("\\", "/")).parts
+                lowered = [part.casefold() for part in parts]
+                try:
+                    func_position = lowered.index(target)
+                except ValueError:
+                    continue
+                try:
+                    benchmark_position = lowered.index("benchmark", 0, func_position)
+                except ValueError:
+                    continue
+                context = tuple(lowered[benchmark_position + 1:func_position])
+                if context and context not in contexts:
+                    contexts.append(context)
+    return contexts
+
+
+def _common_prefix_length(left: tuple[str, ...], right: tuple[str, ...]) -> int:
+    count = 0
+    for left_part, right_part in zip(left, right):
+        if left_part != right_part:
+            break
+        count += 1
+    return count
+
+
+def _common_suffix_length(left: tuple[str, ...], right: tuple[str, ...]) -> int:
+    return _common_prefix_length(tuple(reversed(left)), tuple(reversed(right)))
+
+
+def _unit_test_context(code_repo: Path, path: Path) -> tuple[str, ...]:
+    relative = path.relative_to(code_repo)
+    parts = tuple(part.casefold() for part in relative.parts)
+    if parts and parts[0] == "test":
+        return parts[1:-1]
+    return parts[:-1]
+
+
+def _select_unit_test_from_performance(
+    code_repo: Path, mains: list[Path], func: str, perf_note: dict | None
+) -> Path | None:
+    contexts = _performance_path_contexts(perf_note, func)
+    if not contexts:
+        return None
+
+    scored: list[tuple[tuple[int, int, int, int], Path]] = []
+    for candidate in mains:
+        candidate_context = _unit_test_context(code_repo, candidate)
+        scores = []
+        for context in contexts:
+            exact = int(candidate_context == context)
+            suffix = _common_suffix_length(candidate_context, context)
+            prefix = _common_prefix_length(candidate_context, context)
+            overlap = len(set(candidate_context) & set(context))
+            scores.append((exact, suffix, prefix, overlap))
+        scored.append((max(scores), candidate))
+
+    best_score = max(score for score, _candidate in scored)
+    if best_score == (0, 0, 0, 0):
+        return None
+    winners = [candidate for score, candidate in scored if score == best_score]
+    return winners[0] if len(winners) == 1 else None
+
+
+def find_unit_test(
+    code_repo: Path, func: str, log=print, perf_note: dict | None = None
+) -> dict:
+    """定位单测；同名文件用性能报告 benchmark 路径消歧。"""
     test_root = code_repo / "test"
     if not test_root.is_dir():
         raise LocateError(f"{code_repo} 下没有 test/ 目录")
@@ -242,8 +334,21 @@ def find_unit_test(code_repo: Path, func: str, log=print) -> dict:
             f"test/ 下未找到 {func}.jl。请确认代码 MR 分支正确、函数名无误。"
         )
     if len(mains) > 1:
-        raise LocateError(f"test/ 下有多个 {func}.jl: {[str(m) for m in mains]}")
-    main = mains[0]
+        selected = _select_unit_test_from_performance(
+            code_repo, mains, func, perf_note
+        )
+        if selected is None:
+            raise LocateError(
+                f"test/ 下有多个 {func}.jl，性能报告路径也无法唯一确定: "
+                f"{[str(m) for m in mains]}"
+            )
+        main = selected
+        log(
+            f"  同名 {func}.jl 共 {len(mains)} 个，"
+            f"根据性能报告 benchmark 路径选择: {main.relative_to(code_repo)}"
+        )
+    else:
+        main = mains[0]
 
     companions = sorted(
         p for p in main.parent.glob(f"{func}_*.jl") if p != main

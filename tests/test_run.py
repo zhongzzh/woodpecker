@@ -80,7 +80,7 @@ class PerformanceOptimizationPipelineTests(unittest.TestCase):
                 patch("pipeline.run.mr.read_mr", return_value={
                     "source_branch": "lius/partialcorri_optim_3",
                     "perf_note": sample,
-                }),
+                }) as read_mr,
                 patch("pipeline.run.locate.read_existing_doc_md", return_value={
                     "relative_path": "syslabHelpSourceCode/projects/TyMath/Doc/partialcorri.md",
                     "text": "# partialcorri\n",
@@ -88,13 +88,19 @@ class PerformanceOptimizationPipelineTests(unittest.TestCase):
                 }),
                 patch("pipeline.run.locate.find_unit_test", return_value={
                     "main": unit_file, "companions": [],
-                }),
+                }) as find_unit_test,
                 patch("pipeline.run.locate.find_benchmark_dir", return_value=None),
             ):
                 report_path = run(card, skip_ai=True, log=lambda _msg: None)
 
             report = report_path.read_text(encoding="utf-8")
             task = json.loads((report_path.parent / "task.json").read_text(encoding="utf-8"))
+            read_mr.assert_called_once_with(
+                card.code_mr, log=ANY, func="partialcorri"
+            )
+            find_unit_test.assert_called_once_with(
+                code_repo, "partialcorri", log=ANY, perf_note=sample
+            )
             self.assertIn("任务类型：性能优化", report)
             self.assertIn("【未衰退（性能提升/持平）】", report)
             self.assertIn("性能验证通过（未衰退）", report)

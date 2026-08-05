@@ -26,6 +26,60 @@ class ExistingDocLocateTests(unittest.TestCase):
         )
 
 
+class RepositoryUnitTestLocateTests(unittest.TestCase):
+    @staticmethod
+    def _performance_note(func, path):
+        return {
+            "tables": [{
+                "title": "分支版本详细数据",
+                "headers": ["func_name", "git_file"],
+                "rows": [[func, path]],
+            }],
+        }
+
+    def test_performance_path_selects_matching_duplicate_function(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            expected = repo / "test" / "BoundaryArea" / "area.jl"
+            other = (
+                repo / "test" / "ElementaryPolygons" / "polyshape" / "area.jl"
+            )
+            for path in (expected, other):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("@test true", encoding="utf-8")
+            note = self._performance_note(
+                "area",
+                "benchmark/BoundaryArea/area/PerformanceTest/PerformanceTest1",
+            )
+
+            result = locate.find_unit_test(
+                repo, "area", log=lambda _message: None, perf_note=note
+            )
+
+        self.assertEqual(result["main"], expected)
+
+    def test_unrelated_performance_path_keeps_duplicate_error(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            repo = Path(tmp)
+            for relative in (
+                "test/BoundaryArea/area.jl",
+                "test/ElementaryPolygons/polyshape/area.jl",
+            ):
+                path = repo / Path(relative)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("@test true", encoding="utf-8")
+            note = self._performance_note(
+                "area", "benchmark/UnknownCategory/area/PerformanceTest/Test1"
+            )
+
+            with self.assertRaisesRegex(
+                locate.LocateError, "性能报告路径也无法唯一确定"
+            ):
+                locate.find_unit_test(
+                    repo, "area", log=lambda _message: None, perf_note=note
+                )
+
+
 class LocalMaterialLocateTests(unittest.TestCase):
     def test_library_name_resolves_dot_jl_repository(self):
         with tempfile.TemporaryDirectory() as tmp:
