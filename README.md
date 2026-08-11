@@ -82,6 +82,12 @@ GitLab 地址、SSH 端口和可选代理，先「测试连接」，再「打开
   定位完成后会将准确的
   代码和文档路径自动回填到路径框。性能报告可选，
   直接粘贴原文，留空时明确跳过性能分析。本地模式也可以勾选“编译并打开文档 HTML”，
+  也可勾选“检查文档代码一致性”：此时名称输入框填写文件名（可带扩展名），只需选择
+  Markdown 文件/母目录和代码文件/母目录，不要求函数名、函数库或分支。工具按文件主体名
+  递归定位唯一的 `.md` 与代码文件，提取 Markdown 围栏代码块进行本地文本初筛，再把完整文档、
+  完整代码和候选差异交给 AI 复审语义等价性。报告只把没有等价实现或替代步骤的高置信度项目
+  列为“明显缺少”；路径拼接、额外 `figure()`、注释、变量改名和由运行环境提供的导包不会仅因
+  文本不同而误报。该模式不进行性能分析；使用 `--no-ai` 时只显示非结论性的文本候选。
   定位文档后会自动识别帮助项目、执行编译并打开函数页面。需要忽略本地已有 md、明确获取
   分支最新文档时，可勾选“仅强制更新并编译文档”：该模式先获取远端文档分支，再放弃文档
   仓库的本地冲突和已跟踪改动，通过 `checkout --force` 与 `reset --hard origin/<分支>` 强制对齐，
@@ -118,6 +124,8 @@ GitLab 地址、SSH 端口和可选代理，先「测试连接」，再「打开
   或 `.venv\Scripts\python -m pipeline.run --name "xxx 函数性能优化" --code-mr <URL>`。
   本地材料使用
   `.venv\Scripts\python -m pipeline.run --name "graydiffweight" --local-library TyImageProcessing --local-branch pyh/add_graydiffweight`；
+  文档代码一致性检查使用
+  `.venv\Scripts\python -m pipeline.run --name "sample" --local-code <代码文件或母目录> --local-doc <Markdown文件或母目录> --compare-doc-code`；
   可加 `--perf-report-file <文本文件>` 分析另存的性能报告；加 `--refresh-doc-only` 则只强制更新
   并编译文档，不进入代码和分析流程。
   仓库模式会先在本地文档工作区按函数名和函数库定位 md；命中后直接读取，只有未找到时才尝试

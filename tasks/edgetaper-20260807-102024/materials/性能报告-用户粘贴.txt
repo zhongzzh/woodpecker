@@ -1,0 +1,16 @@
+edgetaper	using TyImageProcessing
+using TyPlot
+
+original = imread("cameraman.tif");
+PSF = fspecial("gaussian", 60, 10);
+edgetaper(original, PSF);
+
+
+##########   MATLAB  ############
+original = imread('cameraman.tif'); 
+PSF = fspecial('gaussian',60,10);
+edgetaper(original,PSF);
+
+
+
+	0.24463	0.005643	0.276389	0.004491	0.885093112	1.256513026

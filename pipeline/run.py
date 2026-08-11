@@ -85,22 +85,27 @@ def _summary_email(
         else card.func if card.is_local else card.code_repo_name.removesuffix(".jl")
     )
     functional_text = "功能验证通过" if functional_performed else "功能验证未进行"
-    lines = [
-        f"{card.name}，{functional_text}，"
-        f"{_performance_email_text(perf_result, performance_performed)}，请补充自动化脚本",
-    ]
+    if card.is_doc_code_consistency:
+        lines = [f"{card.name}，文档代码一致性检查已完成"]
+    else:
+        lines = [
+            f"{card.name}，{functional_text}，"
+            f"{_performance_email_text(perf_result, performance_performed)}，请补充自动化脚本",
+        ]
     if card.is_local:
         source_label = (
             f"本地仓库分支 {card.local_branch} 自动定位"
             if card.uses_local_repositories else "用户电脑本地文件"
         )
+        code_label = "代码文件：" if card.is_doc_code_consistency else "代码/单测："
+        doc_label = "Markdown 文档：" if card.is_doc_code_consistency else "帮助文档："
         lines += [
             f"分析材料来自{source_label}：",
             "",
-            "代码/单测：",
+            code_label,
             *(str(path) for path in (local_code_files or [Path(card.local_code)])),
             "",
-            "帮助文档：",
+            doc_label,
             *(str(path) for path in (local_doc_files or [Path(card.local_doc)])),
         ]
     else:
@@ -193,7 +198,13 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
 
     # ---- 步骤 1/5 文档侧 --------------------------------------------------
     if card.is_local:
-        if card.uses_local_repositories:
+        if card.is_doc_code_consistency:
+            _log("[1/5] 根据文件名定位 Markdown 文档")
+            local_doc_files = [
+                locate.find_local_named_doc(card.local_doc, card.name, log=_log)
+            ]
+            doc_info = {"source_branch": "本地文件", "perf_note": None}
+        elif card.uses_local_repositories:
             _log(f"[1/5] 优先定位本地 {card.func}.md，未找到时再同步文档分支")
             docs_repo = locate.local_git_repo(config.DOCS_REPO_DIR, "文档仓库")
             doc_search_root = str(docs_repo)
@@ -217,12 +228,13 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
                 _log("  已命中本地文档，跳过文档仓库 fetch/checkout/pull")
                 doc_branch = "当前工作区（未切换）"
             doc_info = {"source_branch": doc_branch, "perf_note": None}
-        else:
+        elif not card.is_doc_code_consistency:
             _log("[1/5] 根据函数名定位本地文档")
             doc_search_root = card.local_doc
             doc_info = {"source_branch": "本地文件", "perf_note": None}
             local_doc_files = locate.find_local_docs(
-                doc_search_root, card.func, log=_log
+                doc_search_root, card.func, log=_log,
+                preferred_project=card.local_library,
             )
         doc_md = "\n\n".join(
             f"<!-- 本地文档：{path} -->\n"
@@ -303,7 +315,15 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
 
     # ---- 步骤 2/5 代码侧：MR → 分支 → 单测 + 性能报告 --------------------
     if card.is_local:
-        if card.uses_local_repositories:
+        if card.is_doc_code_consistency:
+            _log("[2/5] 根据文件名定位代码文件")
+            code_file = locate.find_local_named_code(
+                card.local_code, card.name, log=lambda _msg: None
+            )
+            unit = {"main": code_file, "companions": [], "root": code_file.parent}
+            code_repo = code_file.parent
+            code_info = {"source_branch": "本地文件", "perf_note": None}
+        elif card.uses_local_repositories:
             _log(f"[2/5] 同步函数库 {card.local_library} 并定位代码/单测")
             code_repo = locate.find_local_library_repo(card.local_library)
             repo.prepare_branch(code_repo, card.local_branch, log=_log)
@@ -314,7 +334,7 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
             unit = locate.find_local_unit_test(card.local_code, card.func, log=lambda _msg: None)
             code_repo = unit["root"]
             code_info = {"source_branch": "本地文件", "perf_note": None}
-        _log(f"  本地代码/单测: {unit['main']}"
+        _log(f"  {'代码文件' if card.is_doc_code_consistency else '本地代码/单测'}: {unit['main']}"
              + (f"（另找到相关文件 {len(unit['companions'])} 个）" if unit["companions"] else ""))
         (out_dir / config.LOCAL_PATHS_STATE_NAME).write_text(
             json.dumps({
@@ -348,8 +368,55 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
 
     # ---- 步骤 3/5 AI 覆盖分析 --------------------------------------------
     coverage_ai_error = None
+    consistency_status = None
+    consistency_ai_response_file = None
     functional_performed = False
-    if skip_ai:
+    if card.is_doc_code_consistency:
+        code_text = unit["main"].read_text(encoding="utf-8", errors="replace")
+        if skip_ai:
+            _log("[3/5] 文档与代码一致性检查：--no-ai，仅保留文本初筛")
+            consistency_status = "not_reviewed"
+            coverage_ai_status = "skipped"
+            coverage_md = (
+                "> ⚠️ 本次使用 `--no-ai`，下方仅为文本候选差异，不能据此判断代码是否语义缺失。\n\n"
+                + analyze.document_code_consistency(
+                    doc_md, code_text,
+                    doc_name=local_doc_files[0].name,
+                    code_name=unit["main"].name,
+                )
+            )
+        else:
+            _log("[3/5] 文档与代码一致性检查（文本初筛 + AI 语义复审）")
+            try:
+                consistency = analyze.document_code_consistency_analysis(
+                    doc_md, code_text,
+                    doc_name=local_doc_files[0].name,
+                    code_name=unit["main"].name,
+                    log=_log,
+                )
+                coverage_md = consistency["markdown"]
+                consistency_status = consistency["status"]
+                raw_path = materials / "文档代码一致性-AI原始返回.json"
+                raw_path.write_text(consistency["raw"], encoding="utf-8")
+                consistency_ai_response_file = raw_path.relative_to(out_dir).as_posix()
+                coverage_ai_status = "completed"
+                functional_performed = True
+            except analyze.AnalyzeError as exc:
+                coverage_ai_status = "failed"
+                consistency_status = "undetermined"
+                coverage_ai_error = str(exc).replace("\r", " ").replace("\n", " ").strip()
+                coverage_md = (
+                    "> ⚠️ **AI 语义复审失败**\n>\n"
+                    "> 下方文本初筛只能作为候选，不能据此断言代码明显缺失。\n>\n"
+                    f"> 失败原因：{coverage_ai_error}\n\n"
+                    + analyze.document_code_consistency(
+                        doc_md, code_text,
+                        doc_name=local_doc_files[0].name,
+                        code_name=unit["main"].name,
+                    )
+                )
+                _log(f"  ⚠️ AI 语义复审失败，保留文本候选：{coverage_ai_error}")
+    elif skip_ai:
         _log("[3/5] AI 覆盖分析：--no-ai 跳过")
         coverage_md = "> （本次运行使用 --no-ai 跳过了 AI 覆盖分析。）"
         coverage_ai_status = "skipped"
@@ -377,7 +444,14 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
     performance_ai_status = "not_used"
     performance_ai_error = None
     performance_ai_response_file = None
-    if card.is_local:
+    if card.is_doc_code_consistency:
+        performance_ai_status = "not_used"
+        perf_md = (
+            "### 性能分析\n\n"
+            "> 文档代码一致性检查不进行性能分析。"
+        )
+        _log("  文档代码一致性检查模式不进行性能分析")
+    elif card.is_local:
         pasted = perf_report_text.strip()
         if pasted:
             (materials / "性能报告-用户粘贴.txt").write_text(pasted, encoding="utf-8")
@@ -481,10 +555,17 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
     bench_rel = bench.relative_to(code_repo).as_posix() if bench else None
     if card.is_local:
         task_source = f"{card.name}（本地材料：{unit['main']}）"
-        task_type_text = "本地材料分析"
-        rule_text = "提示词 v2（本地文档/代码覆盖分析）"
-        if performance_performed:
-            rule_text += "＋用户粘贴性能报告分析"
+        if card.is_doc_code_consistency:
+            task_type_text = "文档代码一致性检查"
+            rule_text = (
+                "本地文本候选初筛＋AI 语义等价复审"
+                if not skip_ai else "本地文本候选初筛（未执行 AI 复审）"
+            )
+        else:
+            task_type_text = "本地材料分析"
+            rule_text = "提示词 v2（本地文档/代码覆盖分析）"
+            if performance_performed:
+                rule_text += "＋用户粘贴性能报告分析"
     else:
         task_source = (
             f"{card.name}（{card.code_repo_name} {card.code_mr.rsplit('/', 1)[-1]}，"
@@ -499,15 +580,21 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
         report_model = None if skip_ai else analyze.current_model()
     except analyze.AnalyzeError:
         report_model = "配置不可用"
+    report_title = (
+        f"# {card.name} 文档代码一致性报告"
+        if card.is_doc_code_consistency else f"# {card.func} 提测分析报告"
+    )
     header = "\n".join([
-        f"# {card.func} 提测分析报告",
+        report_title,
         "",
         f"> 任务：{task_source}",
         f"> 任务类型：{task_type_text}",
         f"> 文档：{doc_source}",
-        f"> 单测：`{unit_rel}`"
+        f"> {'代码文件' if card.is_doc_code_consistency else '单测'}：`{unit_rel}`"
         + (f"（伴随数据 {len(unit['companions'])} 个）" if unit["companions"] else ""),
-        f"> benchmark：`{bench_rel}`" if bench_rel else "> benchmark：未定位到",
+        f"> benchmark：`{bench_rel}`" if bench_rel else (
+            "> benchmark：不适用" if card.is_doc_code_consistency else "> benchmark：未定位到"
+        ),
         f"> HTML 预览：`{doc_html_info['html']}`"
         if doc_html_info else
         (f"> HTML 预览：编译失败（{doc_html_error}）" if doc_html_error else "> HTML 预览：未执行"),
@@ -522,28 +609,37 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
     leadership_summary = _leadership_summary(
         card, perf_result, performance_performed, functional_performed
     )
+    if card.is_doc_code_consistency:
+        analysis_heading = "## 一、文档与代码一致性检查"
+    else:
+        analysis_heading = "## 一、单元测试覆盖分析（AI）"
     if card.is_local and performance_ai_status in ("completed", "unparsed"):
         performance_heading = "## 二、性能测试判定（AI，仅当前函数）"
     elif card.is_local:
         performance_heading = "## 二、性能测试判定"
     else:
         performance_heading = "## 二、性能测试判定（脚本演算）"
-    report = "\n\n".join([
-        header,
-        "## 一、单元测试覆盖分析（AI）",
-        coverage_md,
-        performance_heading,
-        perf_md,
-        "## 三、总结邮件格式（可直接复制）",
-        f"```text\n{summary_email}\n```",
-        "## 四、上级汇报格式（可直接复制）",
-        f"```text\n{leadership_summary}\n```",
-    ]) + "\n"
+    if card.is_doc_code_consistency:
+        report_parts = [header, analysis_heading, coverage_md]
+    else:
+        report_parts = [
+            header,
+            analysis_heading,
+            coverage_md,
+            performance_heading,
+            perf_md,
+            "## 三、总结邮件格式（可直接复制）",
+            f"```text\n{summary_email}\n```",
+            "## 四、上级汇报格式（可直接复制）",
+            f"```text\n{leadership_summary}\n```",
+        ]
+    report = "\n\n".join(report_parts) + "\n"
     report_path = out_dir / "分析报告.md"
     report_path.write_text(report, encoding="utf-8")
 
     (out_dir / "task.json").write_text(json.dumps({
         "name": card.name, "func": card.func,
+        "file_name": card.name if card.is_doc_code_consistency else None,
         "task_type": card.task_type,
         "input_mode": card.input_mode,
         "code_mr": card.code_mr or None, "doc_mr": card.doc_mr or None,
@@ -553,6 +649,9 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
         "local_doc_input": card.local_doc if card.is_local else None,
         "local_library": card.local_library if card.is_local else None,
         "local_branch": card.local_branch if card.is_local else None,
+        "compare_doc_code": card.is_doc_code_consistency,
+        "consistency_status": consistency_status,
+        "consistency_ai_response_file": consistency_ai_response_file,
         "local_code_files": [str(path) for path in [unit["main"], *unit["companions"]]]
         if card.is_local else [],
         "local_doc_files": [str(path) for path in local_doc_files] if card.is_local else [],
@@ -608,7 +707,11 @@ def main() -> None:
     ap.add_argument("--perf-report-file", default="",
                     help="可选：用户复制保存的性能报告文本文件")
     ap.add_argument("--func", default="", help="函数名（缺省从任务名解析）")
-    ap.add_argument("--no-ai", action="store_true", help="跳过 AI 覆盖分析（调试取数/性能用）")
+    ap.add_argument(
+        "--compare-doc-code", action="store_true",
+        help="本地模式：按文件名比较 Markdown 代码块与代码文件",
+    )
+    ap.add_argument("--no-ai", action="store_true", help="跳过 AI 分析（仅保留非结论性的文本初筛）")
     ap.add_argument(
         "--build-doc-html", action="store_true",
         help="编译新增函数的帮助文档并在浏览器中打开",
@@ -630,6 +733,7 @@ def main() -> None:
             name=args.name, code_mr=args.code_mr, doc_mr=args.doc_mr, func=args.func,
             input_mode=input_mode, local_code=args.local_code, local_doc=args.local_doc,
             local_library=args.local_library, local_branch=args.local_branch,
+            compare_doc_code=args.compare_doc_code,
         )
         if args.refresh_doc_only:
             refresh_and_build_document(card)

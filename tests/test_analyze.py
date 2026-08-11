@@ -112,6 +112,17 @@ class AiConfigTests(unittest.TestCase):
         self.assertIn("单元格内禁止出现换行", rules)
         self.assertIn("对应测试用例位置", rules)
 
+    def test_coverage_summary_uses_missing_items_for_conclusion(self):
+        rules = analyze._load_rules()
+        self.assertIn(
+            "| 参数 | 完全覆盖项 | 文档要求项 | 缺失项 | 参数结论 |",
+            rules,
+        )
+        self.assertIn("本节只判断文档要求项是否有测试证据", rules)
+        self.assertIn("不因这些问题把结论降级", rules)
+        self.assertIn("缺失项为“无”时写“完全覆盖”", rules)
+        self.assertIn("所有文档要求项都缺失时写“未覆盖”", rules)
+
     def test_coverage_prompt_requires_independent_tests_appended_at_end(self):
         rules = analyze._load_rules()
         self.assertIn("只能整体追加到目标单元测试主文件的物理末尾", rules)
@@ -264,6 +275,57 @@ class AiConfigTests(unittest.TestCase):
         self.assertIn("报告给出“Julia / MATLAB”", system)
         self.assertIn("只分析这个精确名称", user)
         self.assertIn("cameraProjection", user)
+
+    def test_default_six_value_performance_row_is_mapped_and_validated(self):
+        report = (
+            "edgetaper\tusing TyImageProcessing\n"
+            "edgetaper(original, PSF);\n\n"
+            "\t0.24463\t0.005643\t0.276389\t0.004491\t"
+            "0.885093112\t1.256513026"
+        )
+
+        row = analyze._default_performance_row("edgetaper", report)
+
+        self.assertIsNotNone(row)
+        self.assertEqual(row["julia_first_seconds"], 0.24463)
+        self.assertEqual(row["matlab_2025b_second_seconds"], 0.004491)
+        self.assertTrue(row["first_ratio_valid"])
+        self.assertTrue(row["second_ratio_valid"])
+        self.assertAlmostEqual(row["computed_first_ratio"], 0.88509311)
+        self.assertAlmostEqual(row["computed_second_ratio"], 1.25651303)
+        self.assertEqual(row["first_threshold"], 1.25)
+        self.assertEqual(row["second_threshold"], 1.5)
+        self.assertTrue(row["first_passed"])
+        self.assertTrue(row["second_passed"])
+        self.assertEqual(row["default_verdict"], "性能通过")
+
+    def test_six_value_default_schema_is_supplied_to_performance_ai(self):
+        report = (
+            "edgetaper\n"
+            "0.24463 0.005643 0.276389 0.004491 0.885093112 1.256513026"
+        )
+        ai_report = "**性能结论：性能通过**"
+        with patch("pipeline.analyze._run_analysis", return_value=ai_report) as call:
+            result = analyze.pasted_performance_analysis("edgetaper", report)
+
+        self.assertEqual(result, ai_report)
+        system, user, _log = call.call_args.args
+        self.assertIn("无表头六数值格式是已约定的明确格式", system)
+        self.assertIn("Julia 首次用时", system)
+        self.assertIn('"first_ratio_valid": true', user)
+        self.assertIn('"second_ratio_valid": true', user)
+        self.assertIn('"default_verdict": "性能通过"', user)
+
+    def test_inconsistent_six_value_ratios_do_not_get_default_verdict(self):
+        row = analyze._default_performance_row(
+            "edgetaper", "edgetaper\n0.2 0.1 0.1 0.1 1.0 1.0"
+        )
+
+        self.assertIsNotNone(row)
+        self.assertFalse(row["first_ratio_valid"])
+        self.assertTrue(row["second_ratio_valid"])
+        self.assertIsNone(row["first_passed"])
+        self.assertIsNone(row["default_verdict"])
 
     def test_performance_verdict_parser_accepts_only_four_fixed_states(self):
         allowed = (

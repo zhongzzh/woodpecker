@@ -1,0 +1,42 @@
+{
+  "name": "imcolordiff",
+  "func": "imcolordiff",
+  "task_type": "local_analysis",
+  "input_mode": "local",
+  "code_mr": null,
+  "doc_mr": null,
+  "local_code": "C:\\Users\\TR\\Desktop\\doc\\TyImageProcessing.jl\\test\\im_space\\test_imcolordiff.jl",
+  "local_doc": "C:\\Users\\TR\\Desktop\\doc\\syslab-docs-2.0\\syslabHelpSourceCode\\projects\\TyImageProcessing\\Doc\\TyImageProcessing\\Import,Export,andConversion\\Color\\MeasureColorDifferences\\imcolordiff.md",
+  "local_code_input": "",
+  "local_doc_input": "",
+  "local_library": "TyImageProcessing",
+  "local_branch": "pyh/add_imcolordiff",
+  "local_code_files": [
+    "C:\\Users\\TR\\Desktop\\doc\\TyImageProcessing.jl\\test\\im_space\\test_imcolordiff.jl",
+    "C:\\Users\\TR\\Desktop\\doc\\TyImageProcessing.jl\\src\\imcolordiff.jl"
+  ],
+  "local_doc_files": [
+    "C:\\Users\\TR\\Desktop\\doc\\syslab-docs-2.0\\syslabHelpSourceCode\\projects\\TyImageProcessing\\Doc\\TyImageProcessing\\Import,Export,andConversion\\Color\\MeasureColorDifferences\\imcolordiff.md"
+  ],
+  "code_branch": "pyh/add_imcolordiff",
+  "doc_branch": "pyh/add_imcolordiff",
+  "doc_md": "syslabHelpSourceCode/projects/TyImageProcessing/Doc/TyImageProcessing/Import,Export,andConversion/Color/MeasureColorDifferences/imcolordiff.md",
+  "unit_test": "test/im_space/test_imcolordiff.jl",
+  "benchmark": null,
+  "doc_html_project": "TyImageProcessing",
+  "doc_html": "C:\\Users\\TR\\Desktop\\doc\\syslab-docs-2.0\\syslabHelpSourceCode\\dist\\Help\\TyImageProcessing\\Doc\\TyImageProcessing\\Import,Export,andConversion\\Color\\MeasureColorDifferences\\imcolordiff.html",
+  "doc_html_url": "file:///C:/Users/TR/Desktop/doc/syslab-docs-2.0/syslabHelpSourceCode/dist/Help/TyImageProcessing/index.html#/Doc/TyImageProcessing/Import%2CExport%2CandConversion/Color/MeasureColorDifferences/imcolordiff.html#%E8%AF%AD%E6%B3%95",
+  "doc_html_requested": true,
+  "doc_html_browser_opened": true,
+  "doc_html_error": null,
+  "perf_note_heading": null,
+  "pasted_performance_report": true,
+  "coverage_ai_status": "completed",
+  "coverage_ai_error": null,
+  "performance_ai_status": "completed",
+  "performance_ai_error": null,
+  "performance_ai_response_file": "materials/性能分析-AI原始返回.md",
+  "performance_verdict": "性能通过",
+  "model": "gpt-5.6-sol",
+  "generated_at": "2026-08-07T11:06:12"
+}

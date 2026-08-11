@@ -152,7 +152,7 @@ class LocalMaterialLocateTests(unittest.TestCase):
         self.assertEqual(result["main"], test_file)
         self.assertEqual(result["companions"], [source_file])
 
-    def test_directory_mode_finds_all_matching_docs_with_exact_name_first(self):
+    def test_directory_mode_finds_only_exactly_named_doc(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             exact = root / "docs" / "chromadapt.md"
@@ -166,7 +166,31 @@ class LocalMaterialLocateTests(unittest.TestCase):
                 str(root), "chromadapt", log=lambda _message: None
             )
 
-        self.assertEqual(result, [exact, extra])
+        self.assertEqual(result, [exact])
+
+    def test_directory_mode_does_not_match_function_as_filename_substring(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            false_match = root / "nrPBCHDMRSIndices.md"
+            false_match.write_text("# unrelated", encoding="utf-8")
+
+            with self.assertRaisesRegex(
+                locate.LocateError, "严格等于完整函数名 'dice'.*\\.md"
+            ):
+                locate.find_local_docs(
+                    str(root), "dice", log=lambda _message: None
+                )
+
+    def test_directory_mode_accepts_case_variant_of_exact_doc_name(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            doc = Path(tmp) / "Dice.md"
+            doc.write_text("# dice", encoding="utf-8")
+
+            result = locate.find_local_docs(
+                tmp, "dice", log=lambda _message: None
+            )
+
+        self.assertEqual(result, [doc])
 
     def test_repository_docs_prefer_matching_help_project(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -189,6 +213,31 @@ class LocalMaterialLocateTests(unittest.TestCase):
             )
 
         self.assertEqual(result, [preferred])
+
+    def test_document_search_ignores_generated_cache_copies(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            source = (
+                root / "syslabHelpSourceCode" / "projects" / "TyImageProcessing"
+                / "Doc" / "writeVideo.md"
+            )
+            cached = (
+                root / "syslabHelpSourceCode" / ".cache" / "docs-build" / "staging"
+                / "TyImageProcessing-build" / "Doc" / "writeVideo.md"
+            )
+            for path in (source, cached):
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_text("# writeVideo", encoding="utf-8")
+
+            docs = locate.find_local_docs(
+                str(root), "writeVideo", log=lambda _message: None
+            )
+            named_doc = locate.find_local_named_doc(
+                str(root), "writeVideo", log=lambda _message: None
+            )
+
+        self.assertEqual(docs, [source])
+        self.assertEqual(named_doc, source)
 
     def test_directory_mode_reports_missing_function_material(self):
         with tempfile.TemporaryDirectory() as tmp:

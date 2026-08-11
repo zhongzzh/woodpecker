@@ -1,0 +1,25 @@
+imcolordiff	
+using TyImageProcessing
+using TyPlot
+
+he = imread("hestain.png");
+imshow(he)
+
+lab = rgb2lab(he);
+
+lab2 = copy(lab);
+scaleFactor = 1.1;
+lab2[:, :, 2] = scaleFactor * lab[:, :, 2];
+
+imcolordiff(lab, lab2; isInputLab=true);
+
+imcolordiff(lab, lab2; isInputLab=true);
+##########   MATLAB  ############
+% mtest-setup begin
+I1 = imread('peppers.png');
+I2 = localcontrast(I1);
+% mtest-setup end
+imcolordiff(I1,I2);
+
+
+	0.152984	0.001273	0.725602	0.054803	0.210837346	0.023228655

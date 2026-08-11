@@ -2,7 +2,8 @@
 
 在线新增函数（D8）：任务名 + 代码 MR + 文档 MR。
 在线性能优化（D23~D28）：任务名 + 代码 MR；文档从本地既有文档仓库读取。
-本地材料支持两种方式：函数名 + 函数库名 + 源分支自动同步定位，或沿用代码/文档路径。
+本地材料支持三种方式：函数名 + 函数库名 + 源分支自动同步定位，沿用代码/文档路径，
+以及按文件名检查 Markdown 中的代码与代码文件是否一致。
 """
 
 from __future__ import annotations
@@ -50,12 +51,16 @@ class TaskCard:
     local_doc: str = ""         # 文档文件或其母目录
     local_library: str = ""     # 本地仓库模式的函数库名，如 TyImageProcessing
     local_branch: str = ""      # 代码源分支；本地无函数文档时也作为文档同步分支
+    compare_doc_code: bool = False  # 本地文件名模式：检查文档代码与代码文件一致性
     task_type: str = field(init=False)
 
     def __post_init__(self) -> None:
         self.input_mode = self.input_mode.strip().lower() or "remote"
+        self.compare_doc_code = bool(self.compare_doc_code)
         if self.input_mode not in ("remote", "local"):
             raise ValueError(f"不支持的材料来源：{self.input_mode!r}（应为 remote/local）")
+        if self.compare_doc_code and not self.is_local:
+            raise ValueError("文档代码一致性检查仅支持本地材料")
 
         if "性能优化" in self.name:
             self.task_type = "performance_optimization"
@@ -84,10 +89,14 @@ class TaskCard:
             elif self.local_code.strip() and Path(self.local_code.strip()).suffix:
                 self.func = Path(self.local_code.strip()).stem
 
+        if not self.func and self.compare_doc_code:
+            # 文件名模式不把输入当函数名；内部仍保留一个稳定的报告目录标识。
+            self.func = Path(self.name.strip()).stem or self.name.strip()
+
         if not self.func:
             raise ValueError(f"无法从任务名解析函数名，请显式提供 --func：{self.name!r}")
         if self.is_local:
-            repository_mode = bool(self.local_branch.strip())
+            repository_mode = bool(self.local_branch.strip()) and not self.compare_doc_code
             if repository_mode:
                 if not self.local_library.strip():
                     raise ValueError("本地材料模式必须提供函数库名称")
@@ -108,7 +117,7 @@ class TaskCard:
     @property
     def uses_local_repositories(self) -> bool:
         """本地材料是否由函数库名和分支自动获取。"""
-        return self.is_local and bool(self.local_branch.strip())
+        return self.is_local and not self.compare_doc_code and bool(self.local_branch.strip())
 
     @property
     def is_performance_optimization(self) -> bool:
@@ -117,6 +126,11 @@ class TaskCard:
     @property
     def is_new_function(self) -> bool:
         return self.task_type == "new_function"
+
+    @property
+    def is_doc_code_consistency(self) -> bool:
+        """本地 Markdown 与代码文件的一致性检查模式。"""
+        return self.compare_doc_code
 
     # ---- 从 MR 链接推导 --------------------------------------------------
     @staticmethod

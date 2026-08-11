@@ -3,10 +3,16 @@
 from __future__ import annotations
 
 import os
+import re
 from pathlib import Path, PurePosixPath
 
 from . import config
 from . import repo as repo_mod
+
+
+_IGNORED_MATERIAL_DIRS = {
+    ".git", ".venv", "__pycache__", "node_modules", ".cache",
+}
 
 
 class LocateError(RuntimeError):
@@ -60,27 +66,134 @@ def local_file(path_text: str, label: str) -> Path:
     return local_path(path_text, label)
 
 
-def _local_matches(source: Path, func: str, suffix: str, label: str) -> tuple[list[Path], Path]:
-    """查找文件名严格包含函数名的本地材料。"""
+def _requested_material_stem(file_name: str) -> str:
+    """把用户填写的文件名归一为跨 md/代码文件共用的主体名。"""
+    value = file_name.strip()
+    if not value:
+        raise LocateError("文件名称不能为空")
+    if Path(value).name != value or value in (".", "..") or "/" in value or "\\" in value:
+        raise LocateError(f"文件名称只能填写名称，不能包含目录：{file_name!r}")
+    path = Path(value)
+    return path.stem if path.suffix else value
+
+
+def _material_name_key(file_name: str) -> str:
+    """归一示例文件名：忽略数字序号、分隔符和大小写。"""
+    stem = Path(file_name).stem
+    stem = re.sub(r"^\d+[\s_.-]*", "", stem)
+    return "".join(character for character in stem.casefold() if character.isalnum())
+
+
+def find_local_named_file(
+    path_text: str,
+    file_name: str,
+    suffix: str,
+    label: str,
+    log=print,
+    relaxed_name: bool = False,
+) -> Path:
+    """按文件名从具体文件或母目录中唯一定位材料。
+
+    ``file_name`` 可带代码或 Markdown 扩展名；定位时统一取主体名，再分别
+    拼接目标扩展名，使同一个输入可同时查找 ``sample.md`` 和 ``sample.jl``。
+    """
+    source = local_path(path_text, f"{label}路径", allow_directory=True)
+    stem = _requested_material_stem(file_name)
+    expected_name = f"{stem}{suffix}"
     if source.is_file():
-        if source.suffix.lower() != suffix or func not in source.stem:
+        # 用户已经明确选择具体文件时，以路径为准；名称只服务于母目录搜索。
+        if source.suffix.casefold() != suffix.casefold():
+            raise LocateError(f"{label}扩展名必须为 {suffix}：{source}")
+        matches = [source]
+    else:
+        exact_matches = []
+        normalized_matches = []
+        requested_key = _material_name_key(expected_name)
+        for directory, dirnames, filenames in os.walk(source):
+            dirnames[:] = [
+                name for name in dirnames
+                if name.casefold() not in _IGNORED_MATERIAL_DIRS
+            ]
+            for name in filenames:
+                if name.casefold() == expected_name.casefold():
+                    exact_matches.append(Path(directory) / name)
+                elif (
+                    relaxed_name
+                    and Path(name).suffix.casefold() == suffix.casefold()
+                    and _material_name_key(name) == requested_key
+                ):
+                    normalized_matches.append(Path(directory) / name)
+        matches = exact_matches or normalized_matches
+        matches.sort()
+        if not matches:
+            match_rule = "等价于" if relaxed_name else "等于"
+            raise LocateError(f"{source} 下未找到文件名{match_rule} {expected_name!r} 的{label}")
+        if len(matches) > 1:
             raise LocateError(
-                f"{label}文件名必须包含完整函数名 {func!r}，且扩展名为 {suffix}：{source}"
+                f"{source} 下找到多个同名{label} {expected_name!r}，请直接选择具体文件："
+                f"{[str(path) for path in matches]}"
+            )
+    log(f"  {label}: {matches[0]}")
+    return matches[0]
+
+
+def find_local_named_code(path_text: str, file_name: str, log=print) -> Path:
+    """按用户填写的文件名定位代码文件；缺省代码扩展名为 ``.jl``。"""
+    supplied_suffix = Path(file_name.strip()).suffix.lower()
+    suffix = supplied_suffix if supplied_suffix and supplied_suffix != ".md" else ".jl"
+    return find_local_named_file(
+        path_text, file_name, suffix, "代码文件", relaxed_name=True, log=log
+    )
+
+
+def find_local_named_doc(path_text: str, file_name: str, log=print) -> Path:
+    """按用户填写的文件名定位对应的 Markdown 文件。"""
+    return find_local_named_file(path_text, file_name, ".md", "Markdown 文档", log=log)
+
+
+def _local_matches(
+    source: Path,
+    func: str,
+    suffix: str,
+    label: str,
+    exact_name: bool = False,
+) -> tuple[list[Path], Path]:
+    """查找本地材料；文档可要求文件主体与函数名严格相等。"""
+    if source.is_file():
+        name_matches = (
+            source.stem.casefold() == func.casefold()
+            if exact_name
+            else func in source.stem
+        )
+        if source.suffix.lower() != suffix or not name_matches:
+            raise LocateError(
+                f"{label}文件名必须"
+                + (f"严格等于完整函数名 {func!r}" if exact_name else f"包含完整函数名 {func!r}")
+                + f"，且扩展名为 {suffix}：{source}"
             )
         return [source], source.parent
 
     hits = []
-    ignored_dirs = {".git", ".venv", "__pycache__", "node_modules"}
     for directory, dirnames, filenames in os.walk(source):
-        dirnames[:] = [name for name in dirnames if name not in ignored_dirs]
-        hits.extend(
-            Path(directory) / name for name in filenames
-            if Path(name).suffix.lower() == suffix and func in Path(name).stem
-        )
+        dirnames[:] = [
+            name for name in dirnames
+            if name.casefold() not in _IGNORED_MATERIAL_DIRS
+        ]
+        for name in filenames:
+            path = Path(directory) / name
+            if path.suffix.lower() != suffix:
+                continue
+            if exact_name and path.stem.casefold() != func.casefold():
+                continue
+            if not exact_name and func not in path.stem:
+                continue
+            hits.append(path)
     hits.sort()
     if not hits:
         raise LocateError(
-            f"{source} 下未找到文件名包含完整函数名 {func!r} 的 {suffix} 文件"
+            f"{source} 下未找到文件名"
+            + (f"严格等于完整函数名 {func!r}" if exact_name else f"包含完整函数名 {func!r}")
+            + f" 的 {suffix} 文件"
         )
     return hits, source
 
@@ -131,12 +244,15 @@ def find_local_docs(
 ) -> list[Path]:
     """从用户指定的文件或母目录中查找函数文档。
 
-    文档仓库中可能有多个项目保存同名函数文档。仓库自动定位模式可传入
-    ``preferred_project``，优先保留 ``projects/<项目名>`` 下的命中；手动路径
-    模式仍保留全部命中。
+    文档文件名必须严格等于 ``<func>.md``，避免 ``dice`` 误命中
+    ``nrPBCHDMRSIndices.md`` 这类仅包含子串的文件。文档仓库中可能有多个
+    项目保存同名函数文档；自动定位模式可传入 ``preferred_project``，优先
+    保留 ``projects/<项目名>`` 下的命中。
     """
     source = local_path(path_text, "本地文档路径", allow_directory=True)
-    matches, _root = _local_matches(source, func, ".md", "本地文档")
+    matches, _root = _local_matches(
+        source, func, ".md", "本地文档", exact_name=True
+    )
     project = preferred_project.strip().removesuffix(".jl")
     if project and len(matches) > 1:
         project_matches = []

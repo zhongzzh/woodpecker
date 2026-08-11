@@ -1,0 +1,43 @@
+{
+  "verdict": "consistent",
+  "summary": "文档与代码在功能目标上一致，所有候选差异均有语义等价实现或替代步骤，无缺失项。",
+  "reviewed_candidates": 9,
+  "missing_items": [],
+  "equivalent_items": [
+    {
+      "section": "步骤 1：读取并显示图像",
+      "document_lines": "14-18",
+      "document_code": "rgb = imread(\"coloredChips.png\");",
+      "code_lines": "9",
+      "code_code": "rgb = imread(joinpath(path, \"coloredChips.png\"));",
+      "reason": "路径构造方式不同，但读取同一图像文件，语义等价。"
+    },
+    {
+      "section": "步骤 2：确定要搜索的半径范围",
+      "document_lines": "28-29,37-39",
+      "document_code": "d = imdistline()\nsetLabelVisible(d, false)\npos = getPosition(d)\ndiffPos = diff(pos; dims=1)\ndiameter = hypot(diffPos[1, 1], diffPos[1, 2])",
+      "code_lines": "19",
+      "code_code": "radiusRange = [20, 30];",
+      "reason": "文档通过交互式工具计算直径并推导半径范围，代码直接给定半径范围[20,30]作为替代实现，最终功能目的（指定搜索半径范围）一致。"
+    },
+    {
+      "section": "步骤 3：判断圆形目标的极性",
+      "document_lines": "60",
+      "document_code": "centers, radii = imfindcircles(rgb, radiusRange; ObjectPolarity=\"dark\");",
+      "code_lines": "20-22",
+      "code_code": "centersDark, radiiDark = imfindcircles(rgb, radiusRange; ObjectPolarity=\"dark\", Sensitivity=0.94);",
+      "reason": "变量名不同且增加了Sensitivity参数，但核心功能（检测暗圆）相同，代码通过更高敏感度一步完成检测，属等价实现。"
+    },
+    {
+      "section": "步骤 4：提高检测敏感度",
+      "document_lines": "70-71,77-78",
+      "document_code": "centers, radii = imfindcircles(rgb, radiusRange; ObjectPolarity=\"dark\", Sensitivity=0.7);\nviscircles(centers, radii; Color=\"r\")",
+      "code_lines": "20-22,27",
+      "code_code": "centersDark, radiiDark = imfindcircles(rgb, radiusRange; ObjectPolarity=\"dark\", Sensitivity=0.94);\nviscircles(centersDark, radiiDark; Color=\"r\")",
+      "reason": "文档使用Sensitivity=0.7提高敏感度并绘图，代码使用Sensitivity=0.94实现更高敏感度检测并绘图，虽参数值不同，但均实现了“提高检测敏感度并显示圆”的目标，变量名差异不影响语义。"
+    }
+  ],
+  "notes": [
+    "文档步骤2的交互测量操作（imdistline等）在代码中被硬编码的半径范围替代，虽功能等价，但丢失了交互式确定半径的演示环节，可能影响教学完整性。"
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "verdict": "missing",
+  "summary": "文档中两个中间图像显示步骤（imshow(I2) 和 imshow(I3)）在代码文件中缺失，其余差异为语义等价或非必须的替代说明。",
+  "reviewed_candidates": 6,
+  "missing_items": [
+    {
+      "section": "步骤 3：从原始图像中减去背景",
+      "document_lines": "47-48",
+      "document_code": "imshow(I2)",
+      "expected_behavior": "显示背景减除后的图像 I2，观察背景均匀化效果",
+      "code_evidence": "代码中执行了 I2 = imsubtract(I, background) 但未调用 imshow(I2)，后续直接显示二值图像 bw",
+      "reason": "代码文件缺少该中间结果显示步骤，没有等价替代"
+    },
+    {
+      "section": "步骤 4：提高图像对比度",
+      "document_lines": "64-65",
+      "document_code": "imshow(I3)",
+      "expected_behavior": "显示对比度增强后的图像 I3，观察米粒与背景分离效果",
+      "code_evidence": "代码中执行了 I3 = imadjust(I2) 但未调用 imshow(I3)，后续直接显示二值图像 bw",
+      "reason": "代码文件缺少该中间结果显示步骤，没有等价替代"
+    }
+  ],
+  "equivalent_items": [
+    {
+      "section": "步骤 1：读取并显示图像",
+      "document_lines": "14-18",
+      "document_code": "I = imread(\"rice.png\");",
+      "code_lines": "9",
+      "code_code": "I = imread(joinpath(path, \"rice.png\"));",
+      "reason": "路径构造方式不同但读取同一图像资源，语义等价"
+    }
+  ],
+  "notes": [
+    "步骤3中文档提供了 imtophat 替代方法，代码采用 imsubtract 实现，属于可选路径未实现，非缺失",
+    "步骤7中文档输出 labeled 的类型和大小（println...typeof/size），代码未包含这两条输出语句，属于辅助展示信息，不影响核心功能"
+  ]
+}

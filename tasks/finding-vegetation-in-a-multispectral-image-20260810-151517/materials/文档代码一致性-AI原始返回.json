@@ -1,0 +1,60 @@
+{
+  "verdict": "consistent",
+  "summary": "文档与代码完全语义等价，6个候选差异均为数组字面量语法或路径构造的等价写法，无功能步骤缺失。",
+  "reviewed_candidates": 6,
+  "missing_items": [],
+  "equivalent_items": [
+    {
+      "section": "步骤 1",
+      "document_lines": "16-27",
+      "document_code": "rawData = open(\"paris.lan\", \"r\") do io",
+      "code_lines": "8",
+      "code_code": "rawData = open(joinpath(@__DIR__, \"paris.lan\"), \"r\") do io",
+      "reason": "路径构造不同但读取同一资源文件，语义等价。"
+    },
+    {
+      "section": "步骤 2",
+      "document_lines": "71-78",
+      "document_code": "xlim([0 1])",
+      "code_lines": "37",
+      "code_code": "xlim([0, 1])",
+      "reason": "[0 1] 与 [0, 1] 在此上下文中均将 x 轴范围设为 0 到 1，调用目的相同，仅为数组字面量语法差异，语义等价。"
+    },
+    {
+      "section": "步骤 2",
+      "document_lines": "71-78",
+      "document_code": "ylim([0 1])",
+      "code_lines": "38",
+      "code_code": "ylim([0, 1])",
+      "reason": "同上，ylim 范围设置为 0 到 1，语法形式不影响功能，语义等价。"
+    },
+    {
+      "section": "步骤 3",
+      "document_lines": "103-105",
+      "document_code": "imshow(ndvi, [-1 1])",
+      "code_lines": "49",
+      "code_code": "imshow(ndvi, [-1, 1])",
+      "reason": "显示范围 [-1 1] 与 [-1, 1] 等价，仅为数组构造语法差异，语义等价。"
+    },
+    {
+      "section": "步骤 5",
+      "document_lines": "148-165",
+      "document_code": "xlim([0 1])",
+      "code_lines": "67",
+      "code_code": "xlim([0, 1])",
+      "reason": "与步骤2中的 xlim 同理，设置相同坐标范围，语义等价。"
+    },
+    {
+      "section": "步骤 5",
+      "document_lines": "148-165",
+      "document_code": "ylim([0 1])",
+      "code_lines": "68",
+      "code_code": "ylim([0, 1])",
+      "reason": "与步骤2中的 ylim 同理，语义等价。"
+    }
+  ],
+  "notes": [
+    "文档中 xlim/ylim 使用 [0 1] 无逗号语法，代码改用 [0, 1] 向量形式，两者在 Julia 中类型不同但在当前绘图上下文下效果一致，无需修改。",
+    "文档中部分代码块省略了 figure() 调用，但代码中添加了显式 figure() 以控制窗口创建，属于防御性处理，不视为缺失。"
+  ]
+}

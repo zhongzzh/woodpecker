@@ -419,19 +419,20 @@
             <div class="field" id="docMrField"><div class="field-row"><label for="doc_mr">文档 MR<span class="required">*</span></label><span class="hint">仅新增函数需要</span></div><input type="text" id="doc_mr" inputmode="url" autocomplete="off" placeholder="https://git.tongyuan.cc/.../merge_requests/3761"><div class="field-error" id="doc_mrError"></div></div>
           </div>
           <div class="local-panel" id="localFields" hidden>
-            <div class="local-repo-grid">
+            <div class="local-repo-grid" id="localRepoFields">
               <div class="field"><div class="field-row"><label for="local_library">函数库名称<span class="required">*</span></label></div><input type="text" id="local_library" autocomplete="off" placeholder="TyImageProcessing"><div class="field-error" id="local_libraryError"></div></div>
               <div class="field"><div class="field-row"><label for="local_branch">源分支</label><span class="hint">填写后自动同步</span></div><input type="text" id="local_branch" autocomplete="off" placeholder="pyh/add_graydiffweight"><div class="field-error" id="local_branchError"></div></div>
             </div>
             <div class="field" id="localCodeField"><div class="field-row"><label for="local_code">代码 / 单测路径<span class="required local-path-required">*</span></label><span class="hint">具体 .jl 文件或母目录</span></div><div class="path-row"><input type="text" id="local_code" autocomplete="off" placeholder="C:\path\to\code-or-tests"><div class="path-actions"><button class="btn btn-secondary" id="selectCodeFile" type="button" title="选择 Julia 文件" aria-label="选择 Julia 文件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg></button><button class="btn btn-secondary" id="selectCodeDir" type="button" title="选择代码/单测母目录" aria-label="选择代码/单测母目录"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></button></div></div><div class="field-error" id="local_codeError"></div></div>
             <div class="field" id="localDocField"><div class="field-row"><label for="local_doc">函数文档路径<span class="required local-path-required">*</span></label><span class="hint">具体 .md 文件或母目录</span></div><div class="path-row"><input type="text" id="local_doc" autocomplete="off" placeholder="C:\path\to\docs"><div class="path-actions"><button class="btn btn-secondary" id="selectDocFile" type="button" title="选择 Markdown 文件" aria-label="选择 Markdown 文件"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8Z"/><path d="M14 2v6h6"/></svg></button><button class="btn btn-secondary" id="selectDocDir" type="button" title="选择函数文档母目录" aria-label="选择函数文档母目录"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 7a2 2 0 0 1 2-2h4l2 2h8a2 2 0 0 1 2 2v9a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2Z"/></svg></button></div></div><div class="field-error" id="local_docError"></div></div>
             <div class="field" id="perfReportField"><div class="field-row"><label for="perf_report_text">性能报告</label><span class="hint">可选；留空则不分析性能</span></div><textarea id="perf_report_text" autocomplete="off" placeholder="可把性能报告原文粘贴到这里。系统只根据已提供的数据判断，缺失项会明确标注无法判定。"></textarea></div>
+            <div class="checkbox-field"><input type="checkbox" id="compare_doc_code"><label for="compare_doc_code">检查文档代码一致性<br><span class="hint">文本初筛后由 AI 复审语义等价性，只报告明显缺失；不需要函数名或函数库名</span></label></div>
             <div class="checkbox-field"><input type="checkbox" id="refresh_doc_only"><label for="refresh_doc_only">仅强制更新并编译文档<br><span class="hint">以远端文档为准，放弃本地冲突和已跟踪改动；不读取代码，不执行 AI 分析</span></label></div>
           </div>
           <div class="checkbox-field" id="docHtmlField"><input type="checkbox" id="build_doc_html"><label for="build_doc_html">编译并打开文档 HTML<br><span class="hint">编译较慢，只在需要预览文档时勾选</span></label></div>
           <details class="advanced"><summary><span>高级选项</span><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 9 6 6 6-6"/></svg></summary><div class="advanced-content">
-            <div class="field"><label for="func">函数名</label><input type="text" id="func" autocomplete="off" placeholder="默认从任务名解析"></div>
-            <div class="checkbox-field"><input type="checkbox" id="no_ai"><label for="no_ai">跳过 AI 覆盖分析<br><span class="hint">仅用于调试取数和性能流程</span></label></div>
+            <div class="field" id="funcField"><label for="func">函数名</label><input type="text" id="func" autocomplete="off" placeholder="默认从任务名解析"></div>
+            <div class="checkbox-field"><input type="checkbox" id="no_ai"><label for="no_ai">跳过 AI 分析<br><span class="hint">仅用于调试；文档代码检查将只显示文本候选，不能判定语义缺失</span></label></div>
             <div class="field" id="codeBranchField"><label for="code_branch">代码源分支</label><input type="text" id="code_branch" autocomplete="off" placeholder="MR 页面不可用时填写"></div>
             <div class="field" id="docBranchField"><label for="doc_branch">文档源分支</label><input type="text" id="doc_branch" autocomplete="off" placeholder="MR 页面不可用时填写"></div>
           </div></details>
@@ -758,27 +759,39 @@ $("stop").onclick=async()=>{if(!confirm("确定中止当前任务吗？未完成
 
 function inputMode(){return document.querySelector('input[name="input_mode"]:checked')?.value||"remote";}
 function isPerformanceOptimization(){return $("name").value.includes("性能优化");}
-function localRepositoryMode(){return !!$("local_branch").value.trim();}
+function compareDocCode(){return inputMode()==="local"&&$("compare_doc_code").checked;}
+function localRepositoryMode(){return !compareDocCode()&&!!$("local_branch").value.trim();}
 function documentRefreshOnly(){return inputMode()==="local"&&$("refresh_doc_only").checked;}
 function syncLocalRequirements(){const repo=localRepositoryMode()||documentRefreshOnly();document.querySelectorAll(".local-path-required").forEach(el=>el.hidden=repo);}
 function syncTaskTypeUi(){
-  const local=inputMode()==="local",perf=isPerformanceOptimization(),docOnly=documentRefreshOnly();
+  const local=inputMode()==="local",perf=isPerformanceOptimization(),docOnly=documentRefreshOnly(),compare=compareDocCode();
   $("remotePaste").hidden=local;$("remoteFields").hidden=local;$("localFields").hidden=!local;
-  $("docMrField").hidden=perf;$("docHtmlField").hidden=perf||docOnly;$("localCodeField").hidden=docOnly;$("localDocField").hidden=docOnly;$("perfReportField").hidden=docOnly;$("codeBranchField").hidden=local;$("docBranchField").hidden=local||perf;$("steps").hidden=docOnly;
-  $("requiredCount").textContent=local?(docOnly?"填写函数名、函数库名称和文档源分支":"填写源分支，或选择具体材料路径"):perf?"性能优化只需任务名和代码 MR":"新增函数需要三个必填项";
-  $("nameLabel").innerHTML=local?'函数名称<span class="required">*</span>':'任务名称<span class="required">*</span>';
-  $("nameHint").textContent=local?"只填写函数名即可":"完整周提测标题可直接粘贴";
-  $("name").placeholder=local?"例如：graydiffweight":"例如：【数学库2026.7月第二周周提测】TyComputationalGeometry：新增convexHull函数";
-  $("go").querySelector("span").textContent=docOnly?"更新并编译文档":"开始分析";
+  $("docMrField").hidden=perf;$("docHtmlField").hidden=perf||docOnly||compare;$("localCodeField").hidden=docOnly;$("localDocField").hidden=docOnly;$("perfReportField").hidden=docOnly||compare;$("localRepoFields").hidden=!local||compare;$("funcField").hidden=compare;$("codeBranchField").hidden=local;$("docBranchField").hidden=local||perf;$("steps").hidden=docOnly;
+  $("requiredCount").textContent=local?(docOnly?"填写函数名、函数库名称和文档源分支":compare?"填写文件名称，并选择 Markdown 文件和代码文件":"填写源分支，或选择具体材料路径"):perf?"性能优化只需任务名和代码 MR":"新增函数需要三个必填项";
+  $("nameLabel").innerHTML=local?(compare?'文件名称<span class="required">*</span>':'函数名称<span class="required">*</span>'):'任务名称<span class="required">*</span>';
+  $("nameHint").textContent=local?(compare?"用于从母目录查找同名文件":"只填写函数名即可"):"完整周提测标题可直接粘贴";
+  $("name").placeholder=local?(compare?"例如：sample 或 sample.jl":"例如：graydiffweight"):"例如：【数学库2026.7月第二周周提测】TyComputationalGeometry：新增convexHull函数";
+  $("go").querySelector("span").textContent=docOnly?"更新并编译文档":compare?"检查文档代码":"开始分析";
+  $("localCodeField").querySelector("label").childNodes[0].textContent=compare?"代码文件":"代码 / 单测路径";
+  $("localCodeField").querySelector(".hint").textContent=compare?"具体代码文件或母目录":"具体 .jl 文件或母目录";
+  $("localDocField").querySelector("label").childNodes[0].textContent=compare?"Markdown 文件":"函数文档路径";
+  $("localDocField").querySelector(".hint").textContent=compare?"具体 .md 文件或母目录":"具体 .md 文件或母目录";
   const inactive=local?["code_mr","doc_mr"]:["local_library","local_branch","local_code","local_doc"];
   inactive.forEach(id=>{$(id).classList.remove("invalid");$(id+"Error").textContent="";});
   if(perf){$("doc_mr").classList.remove("invalid");$("doc_mrError").textContent="";}
   syncLocalRequirements();
 }
-function validateForm(){let ok=true;const fields=[{id:"name",msg:inputMode()==="local"?"请输入函数名称":"请输入任务名称"}];if(inputMode()==="local"){fields.push({id:"local_library",msg:"请输入函数库名称"});if(documentRefreshOnly())fields.push({id:"local_branch",msg:"强制更新文档时必须填写源分支"});else if(!localRepositoryMode())fields.push({id:"local_code",msg:"请选择或填写代码/单测文件或母目录"},{id:"local_doc",msg:"请选择或填写文档文件或母目录"});}else{fields.push({id:"code_mr",msg:"请输入代码 MR 链接",url:true});if(!isPerformanceOptimization())fields.push({id:"doc_mr",msg:"新增函数任务请输入文档 MR 链接",url:true});}for(const f of fields){const el=$(f.id),value=el.value.trim();let error=!value?f.msg:"";if(!error&&f.url&&!/^https?:\/\//i.test(value))error="请输入完整的 http(s) 链接";el.classList.toggle("invalid",!!error);$(f.id+"Error").textContent=error;if(error)ok=false;}const first=document.querySelector("input.invalid,textarea.invalid");if(first)first.focus();return ok;}
+function validateForm(){let ok=true;const fields=[{id:"name",msg:inputMode()==="local"?(compareDocCode()?"请输入文件名称":"请输入函数名称"):"请输入任务名称"}];if(inputMode()==="local"){if(compareDocCode()){fields.push({id:"local_code",msg:"请选择或填写代码文件或母目录"},{id:"local_doc",msg:"请选择或填写 Markdown 文件或母目录"});}else{fields.push({id:"local_library",msg:"请输入函数库名称"});if(documentRefreshOnly())fields.push({id:"local_branch",msg:"强制更新文档时必须填写源分支"});else if(!localRepositoryMode())fields.push({id:"local_code",msg:"请选择或填写代码/单测文件或母目录"},{id:"local_doc",msg:"请选择或填写文档文件或母目录"});}}else{fields.push({id:"code_mr",msg:"请输入代码 MR 链接",url:true});if(!isPerformanceOptimization())fields.push({id:"doc_mr",msg:"新增函数任务请输入文档 MR 链接",url:true});}for(const f of fields){const el=$(f.id),value=el.value.trim();let error=!value?f.msg:"";if(!error&&f.url&&!/^https?:\/\//i.test(value))error="请输入完整的 http(s) 链接";el.classList.toggle("invalid",!!error);$(f.id+"Error").textContent=error;if(error)ok=false;}const first=document.querySelector("input.invalid,textarea.invalid");if(first)first.focus();return ok;}
 ["name","code_mr","doc_mr","local_library","local_branch","local_code","local_doc"].forEach(id=>$(id).addEventListener("input",()=>{$(id).classList.remove("invalid");$(id+"Error").textContent="";if(id==="name")syncTaskTypeUi();if(id==="local_library"||id==="local_branch")syncLocalRequirements();}));
 document.querySelectorAll('input[name="input_mode"]').forEach(el=>el.addEventListener("change",syncTaskTypeUi));
-$("refresh_doc_only").addEventListener("change",syncTaskTypeUi);
+$("refresh_doc_only").addEventListener("change",()=>{
+  if($("refresh_doc_only").checked)$("compare_doc_code").checked=false;
+  syncTaskTypeUi();
+});
+$("compare_doc_code").addEventListener("change",()=>{
+  if($("compare_doc_code").checked)$("refresh_doc_only").checked=false;
+  syncTaskTypeUi();
+});
 async function selectLocalFile(kind,target,button){
   setButtonBusy(button,true,"选择中");
   try{const {data}=await api("/api/select-local",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind})});if(!data.ok)throw new Error(data.message);if(data.path){$(target).value=data.path;$(target).classList.remove("invalid");$(target+"Error").textContent="";}}
@@ -789,7 +802,7 @@ $("selectCodeDir").onclick=()=>selectLocalFile("code_dir","local_code",$("select
 $("selectDocFile").onclick=()=>selectLocalFile("doc","local_doc",$("selectDocFile"));
 $("selectDocDir").onclick=()=>selectLocalFile("doc_dir","local_doc",$("selectDocDir"));
 $("taskForm").onsubmit=async e=>{
-  e.preventDefault();if(!validateForm())return;const local=inputMode()==="local",perf=isPerformanceOptimization(),docOnly=documentRefreshOnly(),btn=$("go"),payload={input_mode:local?"local":"remote",name:$("name").value.trim(),code_mr:local?"":$("code_mr").value.trim(),doc_mr:local||perf?"":$("doc_mr").value.trim(),local_library:local?$("local_library").value.trim():"",local_branch:local?$("local_branch").value.trim():"",local_code:local?$("local_code").value.trim():"",local_doc:local?$("local_doc").value.trim():"",perf_report_text:local&&!docOnly?$("perf_report_text").value.trim():"",func:$("func").value.trim(),no_ai:$("no_ai").checked,build_doc_html:!perf&&!docOnly&&$("build_doc_html").checked,refresh_doc_only:docOnly,code_branch:local?"":$("code_branch").value.trim(),doc_branch:local||perf?"":$("doc_branch").value.trim()};
+  e.preventDefault();if(!validateForm())return;const local=inputMode()==="local",perf=isPerformanceOptimization(),docOnly=documentRefreshOnly(),compare=compareDocCode(),btn=$("go"),payload={input_mode:local?"local":"remote",name:$("name").value.trim(),code_mr:local?"":$("code_mr").value.trim(),doc_mr:local||perf?"":$("doc_mr").value.trim(),local_library:local?$("local_library").value.trim():"",local_branch:local?$("local_branch").value.trim():"",local_code:local?$("local_code").value.trim():"",local_doc:local?$("local_doc").value.trim():"",perf_report_text:local&&!docOnly&&!compare?$("perf_report_text").value.trim():"",func:compare?"":$("func").value.trim(),no_ai:$("no_ai").checked,build_doc_html:!perf&&!docOnly&&!compare&&$("build_doc_html").checked,refresh_doc_only:docOnly,compare_doc_code:compare,code_branch:local?"":$("code_branch").value.trim(),doc_branch:local||perf?"":$("doc_branch").value.trim()};
   resolvedPathsKey="";setButtonBusy(btn,true,"正在启动");if(!docOnly)updateSteps(1);setStatus("running","准备中",docOnly?"正在启动文档更新与编译…":"正在创建任务并启动分析流程…");updateLog([],true);
   try{const {data}=await api("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});if(!data.ok)throw new Error(data.message);applyResolvedPaths(data.resolved_paths);btn.innerHTML=btn.dataset.html;btn.classList.remove("loading");btn.disabled=true;if(!polling)polling=setInterval(poll,1000);poll();}
   catch(e){setButtonBusy(btn,false);updateSteps(0);setStatus("error","启动失败",e.message);toast(e.message,"error");}

@@ -389,7 +389,7 @@ class LocalMaterialResolutionTests(unittest.TestCase):
 
         self.assertEqual(resolved["local_doc"], r"C:\docs\graydiffweight.md")
 
-    def test_parent_directories_return_preferred_paths_and_all_matches(self):
+    def test_parent_directories_return_preferred_paths_and_exact_doc(self):
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             code = root / "code"
@@ -418,7 +418,7 @@ class LocalMaterialResolutionTests(unittest.TestCase):
             set(resolved["local_code_files"]), {str(main), str(source)}
         )
         self.assertEqual(
-            set(resolved["local_doc_files"]), {str(primary_doc), str(extra_doc)}
+            set(resolved["local_doc_files"]), {str(primary_doc)}
         )
 
 

@@ -219,7 +219,7 @@ def _build_argv(payload: dict) -> list[str]:
         "--name", payload["name"].strip(),
     ]
     if payload.get("input_mode") == "local":
-        if payload.get("local_branch", "").strip():
+        if payload.get("local_branch", "").strip() and not payload.get("compare_doc_code"):
             argv += [
                 "--local-library", payload["local_library"].strip(),
                 "--local-branch", payload["local_branch"].strip(),
@@ -238,13 +238,15 @@ def _build_argv(payload: dict) -> list[str]:
             argv += ["--doc-mr", payload["doc_mr"].strip()]
     if payload.get("func", "").strip():
         argv += ["--func", payload["func"].strip()]
+    if payload.get("compare_doc_code"):
+        argv += ["--compare-doc-code"]
     if payload.get("code_branch", "").strip():
         argv += ["--code-branch", payload["code_branch"].strip()]
     if payload.get("doc_branch", "").strip():
         argv += ["--doc-branch", payload["doc_branch"].strip()]
     if payload.get("no_ai"):
         argv += ["--no-ai"]
-    if payload.get("build_doc_html"):
+    if payload.get("build_doc_html") and not payload.get("compare_doc_code"):
         argv += ["--build-doc-html"]
     if payload.get("refresh_doc_only"):
         argv += ["--refresh-doc-only"]
@@ -727,6 +729,19 @@ def _coverage_prompt_payload() -> dict:
 
 def _resolve_local_materials(card: TaskCard) -> dict:
     """预定位本地材料，返回用于回填的首选路径和完整命中列表。"""
+    if card.is_doc_code_consistency:
+        code = locate.find_local_named_code(
+            card.local_code, card.name, log=lambda _message: None
+        )
+        doc = locate.find_local_named_doc(
+            card.local_doc, card.name, log=lambda _message: None
+        )
+        return {
+            "local_code": str(code),
+            "local_doc": str(doc),
+            "local_code_files": [str(code)],
+            "local_doc_files": [str(doc)],
+        }
     unit = locate.find_local_unit_test(
         card.local_code, card.func, log=lambda _message: None
     )
@@ -861,19 +876,36 @@ class Handler(BaseHTTPRequestHandler):
         elif path == "/api/run":
             input_mode = str(payload.get("input_mode", "remote")).strip().lower() or "remote"
             refresh_doc_only = bool(payload.get("refresh_doc_only"))
+            compare_doc_code = bool(payload.get("compare_doc_code"))
             if refresh_doc_only and input_mode != "local":
                 self._json({
                     "ok": False,
                     "message": "仅更新文档功能只支持本地材料的仓库模式",
                 }, 400)
                 return
+            if compare_doc_code and input_mode != "local":
+                self._json({
+                    "ok": False,
+                    "message": "文档代码一致性检查只支持本地材料",
+                }, 400)
+                return
+            if compare_doc_code and refresh_doc_only:
+                self._json({
+                    "ok": False,
+                    "message": "文档代码一致性检查不能与仅更新文档同时启用",
+                }, 400)
+                return
             if input_mode == "local":
-                repository_mode = bool(str(payload.get("local_branch", "")).strip())
-                required = (
-                    ("name", "local_library", "local_branch")
-                    if repository_mode or refresh_doc_only
-                    else ("name", "local_library", "local_code", "local_doc")
+                repository_mode = (
+                    bool(str(payload.get("local_branch", "")).strip())
+                    and not compare_doc_code
                 )
+                if compare_doc_code:
+                    required = ("name", "local_code", "local_doc")
+                elif repository_mode or refresh_doc_only:
+                    required = ("name", "local_library", "local_branch")
+                else:
+                    required = ("name", "local_library", "local_code", "local_doc")
             else:
                 required = ("name", "code_mr")
             for field in required:
@@ -892,6 +924,7 @@ class Handler(BaseHTTPRequestHandler):
                     local_doc=str(payload.get("local_doc", "")).strip(),
                     local_library=str(payload.get("local_library", "")).strip(),
                     local_branch=str(payload.get("local_branch", "")).strip(),
+                    compare_doc_code=compare_doc_code,
                 )
                 if card.is_local:
                     if not card.uses_local_repositories:
