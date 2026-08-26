@@ -18,6 +18,24 @@ from . import config
 
 
 FUNCTION_NAME_PATTERN = r"[A-Za-z_][A-Za-z0-9_!]*"
+PERFORMANCE_OPTIMIZATION_RE = re.compile(
+    r"(?:函数)?性能优化|函数优化", re.IGNORECASE
+)
+
+
+def is_performance_optimization_title(text: str) -> bool:
+    """Return whether a task title describes an existing-function optimization."""
+    return bool(PERFORMANCE_OPTIMIZATION_RE.search(text or ""))
+
+
+def has_performance_optimization_marker(text: str) -> bool:
+    """Return whether the title explicitly contains the performance marker.
+
+    The marker controls the branch/baseline summary algorithm.  Keep this
+    separate from task classification so aliases such as ``函数优化`` can
+    still use existing-document input without opting into that algorithm.
+    """
+    return "性能优化" in (text or "")
 
 
 def extract_function_name(text: str) -> str:
@@ -28,6 +46,9 @@ def extract_function_name(text: str) -> str:
     patterns = (
         rf"新增\s*(?P<func>{FUNCTION_NAME_PATTERN})\s*函数",
         rf"(?P<func>{FUNCTION_NAME_PATTERN})\s*(?:函数)?\s*性能优化",
+        rf"(?P<func>{FUNCTION_NAME_PATTERN})\s*函数优化",
+        rf"函数(?:性能)?优化\s*(?P<func>{FUNCTION_NAME_PATTERN})\b",
+        rf"性能优化\s*(?P<func>{FUNCTION_NAME_PATTERN})\b",
         rf"函数(?:名称)?\s*[：:]?\s*(?P<func>{FUNCTION_NAME_PATTERN})\b",
         rf"(?P<func>{FUNCTION_NAME_PATTERN})\s*函数",
     )
@@ -62,7 +83,7 @@ class TaskCard:
         if self.compare_doc_code and not self.is_local:
             raise ValueError("文档代码一致性检查仅支持本地材料")
 
-        if "性能优化" in self.name:
+        if is_performance_optimization_title(self.name):
             self.task_type = "performance_optimization"
         elif re.search(r"新增\s*[A-Za-z_][A-Za-z0-9_!]*\s*函数", self.name):
             self.task_type = "new_function"
@@ -122,6 +143,11 @@ class TaskCard:
     @property
     def is_performance_optimization(self) -> bool:
         return self.task_type == "performance_optimization"
+
+    @property
+    def uses_optimization_summary(self) -> bool:
+        """Whether performance results use the branch/baseline summary text."""
+        return has_performance_optimization_marker(self.name)
 
     @property
     def is_new_function(self) -> bool:

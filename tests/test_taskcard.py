@@ -42,6 +42,16 @@ class TaskCardTests(unittest.TestCase):
         self.assertEqual(card.task_type, "performance_optimization")
         self.assertEqual(card.func, "ode89")
         self.assertEqual(card.doc_project, "syslab/syslab-docs-2.0")
+        self.assertTrue(card.uses_optimization_summary)
+
+    def test_function_optimization_alias_needs_no_doc_mr(self):
+        card = TaskCard(
+            name="函数优化rmnode",
+            code_mr="https://git.tongyuan.cc/syslab/packages/math/TyImageProcessing.jl/-/merge_requests/1",
+        )
+        self.assertEqual(card.task_type, "performance_optimization")
+        self.assertEqual(card.func, "rmnode")
+        self.assertFalse(card.uses_optimization_summary)
 
     def test_new_function_still_requires_doc_mr(self):
         with self.assertRaisesRegex(ValueError, "必须提供文档 MR"):

@@ -176,6 +176,14 @@ class WebArgvTests(unittest.TestCase):
         })
         self.assertNotIn("--doc-mr", argv)
 
+    def test_function_optimization_alias_does_not_emit_doc_mr_argument(self):
+        argv = _build_argv({
+            "name": "函数优化rmnode",
+            "code_mr": "https://git.tongyuan.cc/a/b/-/merge_requests/1",
+            "doc_mr": "",
+        })
+        self.assertNotIn("--doc-mr", argv)
+
     def test_new_function_keeps_doc_mr_argument(self):
         argv = _build_argv({
             "name": "新增 ode89 函数",

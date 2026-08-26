@@ -524,7 +524,9 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
         performance_performed = True
         note = code_info["perf_note"]
         mr.save_note_snapshot(note, materials / "性能报告-最新note.json")
-        if card.is_performance_optimization:
+        # 只有标题明确包含“性能优化”时，才使用摘要中的基准/分支变快变慢结论。
+        # 其他优化别名沿用新增函数的分支详细表（MATLAB）判定。
+        if card.uses_optimization_summary:
             perf_result = perf.judge_optimization_note(note)
             perf_md = perf.render_optimization_markdown(perf_result, note["heading"])
             if perf_result["passed"] is True:
@@ -574,7 +576,7 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
         task_type_text = "性能优化" if card.is_performance_optimization else "新增函数"
         rule_text = (
             "提示词 v2（D20）＋性能标准 "
-            f"{'D13/D15/D16/D23~D28' if card.is_performance_optimization else 'D13/D15/D16'}"
+            f"{'D13/D15/D16/D23~D28' if card.uses_optimization_summary else 'D13/D15/D16'}"
         )
     try:
         report_model = None if skip_ai else analyze.current_model()

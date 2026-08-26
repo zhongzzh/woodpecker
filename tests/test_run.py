@@ -4,7 +4,7 @@ import unittest
 from pathlib import Path
 from unittest.mock import ANY, patch
 
-from pipeline import analyze, config
+from pipeline import analyze, config, perf
 from pipeline.run import _leadership_summary, refresh_and_build_document, run
 from pipeline.taskcard import TaskCard
 
@@ -107,6 +107,71 @@ class PerformanceOptimizationPipelineTests(unittest.TestCase):
             self.assertIsNone(task["doc_mr"])
             self.assertEqual(task["task_type"], "performance_optimization")
             self.assertTrue((report_path.parent / "materials" / "partialcorri.md").exists())
+
+    def test_function_optimization_uses_new_function_performance_judgment(self):
+        sample = json.loads(
+            (ROOT / "docs" / "samples" / "MR472-性能报告-note385041.json")
+            .read_text(encoding="utf-8")
+        )
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            tasks_dir = root / "tasks"
+            docs_repo = root / config.DOCS_REPO_NAME
+            code_repo = root / "TyImageProcessing.jl"
+            docs_repo.mkdir()
+            (code_repo / "test").mkdir(parents=True)
+            unit_file = code_repo / "test" / "rmnode.jl"
+            unit_file.write_text("@testset \"rmnode\" begin\nend\n", encoding="utf-8")
+
+            card = TaskCard(
+                name="函数优化rmnode",
+                code_mr="https://git.tongyuan.cc/syslab/packages/math/TyImageProcessing.jl/-/merge_requests/7",
+            )
+
+            def fake_ensure(project, log=print, local_path=None):
+                if project == config.DOCS_REPO_PROJECT:
+                    self.assertEqual(local_path, config.DOCS_REPO_DIR)
+                return docs_repo if project == config.DOCS_REPO_PROJECT else code_repo
+
+            with (
+                patch.object(config, "TASKS_DIR", tasks_dir),
+                patch("pipeline.run.repo.ensure_repo", side_effect=fake_ensure),
+                patch("pipeline.run.repo.refresh_repo", return_value=True),
+                patch("pipeline.run.repo.prepare_branch", return_value={}),
+                patch("pipeline.run.mr.read_mr", return_value={
+                    "source_branch": "dev/rmnode",
+                    "perf_note": sample,
+                }) as read_mr,
+                patch("pipeline.run.locate.read_existing_doc_md", return_value={
+                    "relative_path": "syslabHelpSourceCode/projects/TyMath/Doc/rmnode.md",
+                    "text": "# rmnode\n",
+                    "revision": "origin/develop",
+                }),
+                patch("pipeline.run.locate.find_unit_test", return_value={
+                    "main": unit_file, "companions": [],
+                }) as find_unit_test,
+                patch("pipeline.run.locate.find_benchmark_dir", return_value=None),
+                patch(
+                    "pipeline.run.perf.judge_optimization_note",
+                    side_effect=AssertionError("函数优化不应使用摘要算法"),
+                ),
+                patch(
+                    "pipeline.run.perf.judge_branch_table",
+                    wraps=perf.judge_branch_table,
+                ) as judge_branch_table,
+            ):
+                report_path = run(card, skip_ai=True, log=lambda _msg: None)
+
+            report = report_path.read_text(encoding="utf-8")
+            read_mr.assert_called_once_with(card.code_mr, log=ANY, func="rmnode")
+            find_unit_test.assert_called_once_with(
+                code_repo, "rmnode", log=ANY, perf_note=sample
+            )
+            judge_branch_table.assert_called_once()
+            self.assertIn("任务类型：性能优化", report)
+            self.assertIn("D13/D15/D16", report)
+            self.assertIn("参照系 MATLAB", report)
+            self.assertNotIn("D13/D15/D16/D23~D28", report)
 
 
 class LocalMaterialPipelineTests(unittest.TestCase):

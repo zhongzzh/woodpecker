@@ -9,7 +9,11 @@ from __future__ import annotations
 import re
 from urllib.parse import unquote
 
-from .taskcard import FUNCTION_NAME_PATTERN, extract_function_name
+from .taskcard import (
+    FUNCTION_NAME_PATTERN,
+    extract_function_name,
+    is_performance_optimization_title,
+)
 
 
 class PasteParseError(ValueError):
@@ -22,7 +26,7 @@ MR_URL_RE = re.compile(
 )
 
 FUNC = FUNCTION_NAME_PATTERN
-TASK_TAIL = rf"(?:新增\s*{FUNC}\s*函数|{FUNC}\s*函数\s*性能优化)"
+TASK_TAIL = rf"(?:新增\s*{FUNC}\s*函数|{FUNC}\s*函数(?:性能)?优化|(?:函数)?性能优化\s*{FUNC}|函数优化\s*{FUNC})"
 FULL_TITLE_RE = re.compile(
     rf"【\s*数学库[^】]*周提测[^】]*】\s*"
     rf"[A-Za-z_][A-Za-z0-9_.]*\s*[：:]\s*{TASK_TAIL}",
@@ -93,7 +97,11 @@ def parse_submission_text(text: str) -> dict:
     if not code_urls:
         raise PasteParseError("只识别到文档 MR，没有识别到数学库代码 MR")
 
-    task_type = "performance_optimization" if "性能优化" in name else "new_function"
+    task_type = (
+        "performance_optimization"
+        if is_performance_optimization_title(name)
+        else "new_function"
+    )
     warnings: list[str] = []
     if len(code_urls) > 1:
         warnings.append(f"识别到 {len(code_urls)} 个不同代码 MR，已选用第一个")

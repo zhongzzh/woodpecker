@@ -123,6 +123,15 @@ class AiConfigTests(unittest.TestCase):
         self.assertIn("缺失项为“无”时写“完全覆盖”", rules)
         self.assertIn("所有文档要求项都缺失时写“未覆盖”", rules)
 
+    def test_coverage_prompt_treats_structure_and_type_as_independent_dimensions(self):
+        rules = analyze._load_rules()
+        self.assertIn("禁止把它们自动组合成笛卡尔积", rules)
+        self.assertIn("某种数据类型只要在任一已测试结构中被明确构造/赋值并传入参数", rules)
+        self.assertIn("缺口只写二维，不得再写“二维 `Float32`”和“二维 `UInt8`”", rules)
+        self.assertIn("只有文档明确声明某个绑定组合", rules)
+        self.assertIn("结构和类型各列一次，不展开组合", rules)
+        self.assertIn("补测只针对真正缺失的独立维度", rules)
+
     def test_coverage_prompt_requires_independent_tests_appended_at_end(self):
         rules = analyze._load_rules()
         self.assertIn("只能整体追加到目标单元测试主文件的物理末尾", rules)

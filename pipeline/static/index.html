@@ -758,7 +758,7 @@ async function poll(){
 $("stop").onclick=async()=>{if(!confirm("确定中止当前任务吗？未完成的中间材料会被清理。"))return;const btn=$("stop");setButtonBusy(btn,true,"正在中止");try{const {data}=await api("/api/stop",{method:"POST"});if(!data.ok)throw new Error(data.message);setStatus("stopped","正在中止","正在安全停止当前任务…");}catch(e){toast(e.message,"error");}finally{setButtonBusy(btn,false);}};
 
 function inputMode(){return document.querySelector('input[name="input_mode"]:checked')?.value||"remote";}
-function isPerformanceOptimization(){return $("name").value.includes("性能优化");}
+function isPerformanceOptimization(){return /(?:函数)?性能优化|函数优化/.test($("name").value);}
 function compareDocCode(){return inputMode()==="local"&&$("compare_doc_code").checked;}
 function localRepositoryMode(){return !compareDocCode()&&!!$("local_branch").value.trim();}
 function documentRefreshOnly(){return inputMode()==="local"&&$("refresh_doc_only").checked;}

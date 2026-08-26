@@ -56,6 +56,18 @@ class PasteInputTests(unittest.TestCase):
         self.assertTrue(result["doc_mr"].endswith("/3765"))
         self.assertEqual(result["warnings"], [])
 
+    def test_function_optimization_alias_does_not_require_doc_mr(self):
+        text = (
+            "数学库：函数优化rmnode "
+            "代码 https://git.tongyuan.cc/syslab/packages/image/"
+            "TyImageProcessing.jl/-/merge_requests/7"
+        )
+        result = parse_submission_text(text)
+        self.assertEqual(result["task_type"], "performance_optimization")
+        self.assertEqual(result["func"], "rmnode")
+        self.assertEqual(result["doc_mr"], "")
+        self.assertEqual(result["warnings"], [])
+
     def test_missing_task_title_is_rejected(self):
         with self.assertRaisesRegex(PasteParseError, "没有识别到新增函数或函数性能优化"):
             parse_submission_text(
