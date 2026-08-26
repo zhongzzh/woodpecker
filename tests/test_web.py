@@ -16,11 +16,13 @@ from pipeline.web import (
     _hidden_process_kwargs,
     _list_tasks,
     _profile_api_key,
+    _preflight_existing_doc,
     _public_ai_config,
     _public_gitlab_config,
     _read_index_html,
     _read_failed_steps,
     _resolve_local_materials,
+    _resolve_existing_doc,
     _read_resolved_paths,
     _select_local_file,
     _service_is_running,
@@ -183,6 +185,54 @@ class WebArgvTests(unittest.TestCase):
             "doc_mr": "",
         })
         self.assertNotIn("--doc-mr", argv)
+
+    def test_confirmed_existing_document_is_forwarded_to_pipeline(self):
+        selected = "syslabHelpSourceCode/projects/TyStatistics/Doc/lillietest.md"
+        argv = _build_argv({
+            "name": "lillietest 函数性能优化",
+            "code_mr": "https://git.tongyuan.cc/a/b/-/merge_requests/1",
+            "existing_doc_path": selected,
+        })
+
+        self.assertEqual(
+            argv[argv.index("--existing-doc-path") + 1], selected
+        )
+
+    @patch("pipeline.web.locate.existing_doc_paths")
+    @patch("pipeline.web.repo.refresh_repo")
+    @patch("pipeline.web.repo.ensure_repo", return_value=Path("docs-repo"))
+    def test_performance_preflight_returns_duplicate_doc_candidates(
+        self, _ensure, _refresh, existing_paths
+    ):
+        candidates = ["projects/One/Doc/sample.md", "projects/Two/Doc/sample.md"]
+        existing_paths.return_value = candidates
+        payload = {}
+        card = TaskCard(
+            name="sample 函数性能优化",
+            code_mr="https://git.tongyuan.cc/a/b/-/merge_requests/1",
+        )
+
+        result = _preflight_existing_doc(card, payload)
+
+        self.assertEqual(result["func"], "sample")
+        self.assertEqual(result["candidates"], candidates)
+        self.assertNotIn("existing_doc_path", payload)
+
+    @patch("pipeline.web.locate.match_existing_doc_content")
+    @patch("pipeline.web.repo.ensure_repo", return_value=Path("docs-repo"))
+    def test_resolve_existing_doc_delegates_pasted_text(self, _ensure, match):
+        match.return_value = {
+            "relative_path": "projects/Two/Doc/sample.md", "score": 0.9,
+            "scores": [],
+        }
+
+        result = _resolve_existing_doc("sample", "# sample documentation")
+
+        self.assertEqual(result["relative_path"], "projects/Two/Doc/sample.md")
+        match.assert_called_once_with(
+            Path("docs-repo"), "sample", config.DOCS_DEFAULT_BASE,
+            "# sample documentation",
+        )
 
     def test_new_function_keeps_doc_mr_argument(self):
         argv = _build_argv({

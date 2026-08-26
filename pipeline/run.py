@@ -187,7 +187,7 @@ def refresh_and_build_document(card: TaskCard, log=_log) -> dict:
 
 def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
         doc_branch: str = "", code_branch: str = "",
-        perf_report_text: str = "", log=_log) -> Path:
+        perf_report_text: str = "", existing_doc_path: str = "", log=_log) -> Path:
     _log = log  # 允许 Web 壳注入日志收集器；缺省打印到控制台
     out_dir = card.make_output_dir()
     materials = out_dir / "materials"
@@ -290,7 +290,8 @@ def run(card: TaskCard, skip_ai: bool = False, build_doc_html: bool = False,
         )
         repo.refresh_repo(docs_repo, log=_log)
         doc_material = locate.read_existing_doc_md(
-            docs_repo, card.func, config.DOCS_DEFAULT_BASE, log=_log
+            docs_repo, card.func, config.DOCS_DEFAULT_BASE, log=_log,
+            preferred_path=existing_doc_path,
         )
         doc_info = {"source_branch": doc_material["revision"], "perf_note": None}
         doc_rel = doc_material["relative_path"]
@@ -708,6 +709,8 @@ def main() -> None:
                     help="文档仓库和代码仓库共同使用的源分支")
     ap.add_argument("--perf-report-file", default="",
                     help="可选：用户复制保存的性能报告文本文件")
+    ap.add_argument("--existing-doc-path", default="",
+                    help="性能优化：经内容比对确认的既有文档仓库相对路径")
     ap.add_argument("--func", default="", help="函数名（缺省从任务名解析）")
     ap.add_argument(
         "--compare-doc-code", action="store_true",
@@ -750,6 +753,7 @@ def main() -> None:
                 card, skip_ai=args.no_ai, build_doc_html=args.build_doc_html,
                 doc_branch=args.doc_branch,
                 code_branch=args.code_branch, perf_report_text=perf_report_text,
+                existing_doc_path=args.existing_doc_path,
             )
     except (
         repo.GitError, mr.MrError, locate.LocateError, perf.PerfError,

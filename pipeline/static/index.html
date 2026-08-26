@@ -316,6 +316,13 @@
   .gitlab-status.ready .dot { background:var(--brand); box-shadow:0 0 0 4px var(--brand-soft); }
   .gitlab-status.error { color:var(--danger); border-color:#f0cccc; background:var(--danger-soft); }
   .gitlab-status.error .dot { background:var(--danger); }
+  .doc-match-dialog { width:min(760px,calc(100vw - 28px)); }
+  .doc-match-dialog form { display:flex; min-height:0; flex:1 1 auto; flex-direction:column; }
+  .doc-match-dialog .dialog-footer .inline-msg { min-width:0; flex:1 1 auto; overflow-wrap:anywhere; }
+  .doc-candidates { display:grid; gap:7px; margin:0 0 18px; padding:0; list-style:none; }
+  .doc-candidates li { min-width:0; padding:9px 11px; overflow-wrap:anywhere; border-left:3px solid #b9c9bf;
+    color:#46554c; background:var(--surface-2); font:11px/1.55 Consolas,"Microsoft YaHei UI",monospace; }
+  .doc-reference-editor { min-height:260px; max-height:46vh; resize:vertical; font:12px/1.65 Consolas,"Microsoft YaHei UI",monospace; }
   .dialog-footer { display:flex; align-items:center; justify-content:space-between; gap:12px; padding:15px 25px; border-top:1px solid var(--line); background:#fbfcfb; }
   .footer-actions { display:flex; gap:9px; }
   .toast-region { position:fixed; z-index:100; right:22px; bottom:22px; display:grid; gap:9px; pointer-events:none; }
@@ -506,11 +513,22 @@
   </div>
 </dialog>
 
+<dialog id="docDisambiguationDialog" class="doc-match-dialog" aria-labelledby="docDisambiguationTitle">
+  <div class="dialog-head"><div><h2 id="docDisambiguationTitle">确认函数文档</h2><p id="docDisambiguationMeta">发现多个同名既有文档</p></div><button class="icon-btn" id="closeDocDisambiguation" type="button" aria-label="关闭"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="m6 6 12 12M18 6 6 18"/></svg></button></div>
+  <form id="docDisambiguationForm">
+    <div class="dialog-body">
+      <div class="field"><label>候选文档</label><ul class="doc-candidates" id="docCandidates"></ul></div>
+      <div class="field"><div class="field-row"><label for="docReferenceText">正确文档的内容<span class="required">*</span></label><span class="hint">Markdown 或页面正文均可</span></div><textarea id="docReferenceText" class="doc-reference-editor" maxlength="1000000" placeholder="在此粘贴函数文档内容"></textarea><div class="field-error" id="docReferenceTextError"></div></div>
+    </div>
+    <div class="dialog-footer"><span class="inline-msg" id="docMatchMsg"></span><div class="footer-actions"><button class="btn btn-secondary" id="cancelDocDisambiguation" type="button">取消</button><button class="btn btn-primary" id="matchExistingDoc" type="submit"><span>比对并继续</span></button></div></div>
+  </form>
+</dialog>
+
 <div class="toast-region" id="toastRegion" aria-live="polite"></div>
 
 <script>
 const $ = id => document.getElementById(id);
-let currentMd = "", currentDir = "", polling = null, aiConfig = null, aiDraftNew = false, aiFormBaseline = "", coveragePromptBaseline = "", lifecycleConnection = null, logFollowMode = true, resolvedPathsKey = "", reportLoadVersion = 0, codeChatDir = "", codeChatMessages = [], codeChatBusy = false, codeChatLoading = false, codeChatLoadVersion = 0;
+let currentMd = "", currentDir = "", polling = null, aiConfig = null, aiDraftNew = false, aiFormBaseline = "", coveragePromptBaseline = "", lifecycleConnection = null, logFollowMode = true, resolvedPathsKey = "", reportLoadVersion = 0, codeChatDir = "", codeChatMessages = [], codeChatBusy = false, codeChatLoading = false, codeChatLoadVersion = 0, pendingDocRunPayload = null;
 const iconCheck = '<svg viewBox="0 0 16 16" width="13" height="13" fill="none" stroke="currentColor" stroke-width="2.2"><path d="m3 8 3 3 7-7"/></svg>';
 
 function esc(s){ return String(s ?? "").replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;").replace(/"/g,"&quot;"); }
@@ -792,6 +810,28 @@ $("compare_doc_code").addEventListener("change",()=>{
   if($("compare_doc_code").checked)$("refresh_doc_only").checked=false;
   syncTaskTypeUi();
 });
+function openDocDisambiguation(payload,data){
+  pendingDocRunPayload={...payload,func:data.func||payload.func};
+  $("docDisambiguationMeta").textContent=`${data.func||"该函数"} 在 ${data.revision||"origin/develop"} 中有多个候选，请粘贴正确文档内容。`;
+  $("docCandidates").innerHTML=(data.candidates||[]).map(path=>`<li>${esc(path)}</li>`).join("");
+  $("docReferenceText").value="";$("docReferenceText").classList.remove("invalid");$("docReferenceTextError").textContent="";$("docMatchMsg").textContent="";$("docMatchMsg").className="inline-msg";
+  $("docDisambiguationDialog").showModal();$("docReferenceText").focus();
+}
+function cancelDocDisambiguation(){$("docDisambiguationDialog").close();pendingDocRunPayload=null;setButtonBusy($("go"),false);updateSteps(0);setStatus("","未启动","已取消文档确认，任务尚未启动。");}
+$("closeDocDisambiguation").onclick=$("cancelDocDisambiguation").onclick=cancelDocDisambiguation;
+$("docDisambiguationDialog").addEventListener("click",e=>{if(e.target===$("docDisambiguationDialog"))cancelDocDisambiguation();});
+$("docDisambiguationDialog").addEventListener("cancel",()=>{pendingDocRunPayload=null;setButtonBusy($("go"),false);updateSteps(0);setStatus("","未启动","已取消文档确认，任务尚未启动。");});
+$("docDisambiguationForm").onsubmit=async e=>{
+  e.preventDefault();const text=$("docReferenceText").value.trim();if(!text){$("docReferenceText").classList.add("invalid");$("docReferenceTextError").textContent="请粘贴函数文档内容";return;}
+  const btn=$("matchExistingDoc");setButtonBusy(btn,true,"比对中");$("docMatchMsg").textContent="正在读取 origin/develop 候选并比对…";$("docMatchMsg").className="inline-msg";
+  try{const {data}=await api("/api/resolve-existing-doc",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({func:pendingDocRunPayload.func,reference_text:text})});if(!data.ok)throw new Error(data.message);const payload={...pendingDocRunPayload,existing_doc_path:data.relative_path};$("docDisambiguationDialog").close();pendingDocRunPayload=null;await startTask(payload);}
+  catch(e){$("docMatchMsg").textContent=e.message;$("docMatchMsg").className="inline-msg error";toast(e.message,"error");}finally{setButtonBusy(btn,false);}
+};
+async function startTask(payload){
+  const docOnly=documentRefreshOnly(),btn=$("go");resolvedPathsKey="";setButtonBusy(btn,true,"正在启动");if(!docOnly)updateSteps(1);setStatus("running","准备中",docOnly?"正在启动文档更新与编译…":"正在创建任务并启动分析流程…");updateLog([],true);
+  try{const {data}=await api("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});if(!data.ok){if(data.needs_doc_disambiguation){setButtonBusy(btn,false);setStatus("running","等待确认","请在弹框中粘贴正确的既有文档内容。");openDocDisambiguation(payload,data);return;}throw new Error(data.message);}applyResolvedPaths(data.resolved_paths);btn.innerHTML=btn.dataset.html;btn.classList.remove("loading");btn.disabled=true;if(!polling)polling=setInterval(poll,1000);poll();}
+  catch(e){setButtonBusy(btn,false);updateSteps(0);setStatus("error","启动失败",e.message);toast(e.message,"error");}
+}
 async function selectLocalFile(kind,target,button){
   setButtonBusy(button,true,"选择中");
   try{const {data}=await api("/api/select-local",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({kind})});if(!data.ok)throw new Error(data.message);if(data.path){$(target).value=data.path;$(target).classList.remove("invalid");$(target+"Error").textContent="";}}
@@ -802,10 +842,8 @@ $("selectCodeDir").onclick=()=>selectLocalFile("code_dir","local_code",$("select
 $("selectDocFile").onclick=()=>selectLocalFile("doc","local_doc",$("selectDocFile"));
 $("selectDocDir").onclick=()=>selectLocalFile("doc_dir","local_doc",$("selectDocDir"));
 $("taskForm").onsubmit=async e=>{
-  e.preventDefault();if(!validateForm())return;const local=inputMode()==="local",perf=isPerformanceOptimization(),docOnly=documentRefreshOnly(),compare=compareDocCode(),btn=$("go"),payload={input_mode:local?"local":"remote",name:$("name").value.trim(),code_mr:local?"":$("code_mr").value.trim(),doc_mr:local||perf?"":$("doc_mr").value.trim(),local_library:local?$("local_library").value.trim():"",local_branch:local?$("local_branch").value.trim():"",local_code:local?$("local_code").value.trim():"",local_doc:local?$("local_doc").value.trim():"",perf_report_text:local&&!docOnly&&!compare?$("perf_report_text").value.trim():"",func:compare?"":$("func").value.trim(),no_ai:$("no_ai").checked,build_doc_html:!perf&&!docOnly&&!compare&&$("build_doc_html").checked,refresh_doc_only:docOnly,compare_doc_code:compare,code_branch:local?"":$("code_branch").value.trim(),doc_branch:local||perf?"":$("doc_branch").value.trim()};
-  resolvedPathsKey="";setButtonBusy(btn,true,"正在启动");if(!docOnly)updateSteps(1);setStatus("running","准备中",docOnly?"正在启动文档更新与编译…":"正在创建任务并启动分析流程…");updateLog([],true);
-  try{const {data}=await api("/api/run",{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify(payload)});if(!data.ok)throw new Error(data.message);applyResolvedPaths(data.resolved_paths);btn.innerHTML=btn.dataset.html;btn.classList.remove("loading");btn.disabled=true;if(!polling)polling=setInterval(poll,1000);poll();}
-  catch(e){setButtonBusy(btn,false);updateSteps(0);setStatus("error","启动失败",e.message);toast(e.message,"error");}
+  e.preventDefault();if(!validateForm())return;const local=inputMode()==="local",perf=isPerformanceOptimization(),docOnly=documentRefreshOnly(),compare=compareDocCode(),payload={input_mode:local?"local":"remote",name:$("name").value.trim(),code_mr:local?"":$("code_mr").value.trim(),doc_mr:local||perf?"":$("doc_mr").value.trim(),local_library:local?$("local_library").value.trim():"",local_branch:local?$("local_branch").value.trim():"",local_code:local?$("local_code").value.trim():"",local_doc:local?$("local_doc").value.trim():"",perf_report_text:local&&!docOnly&&!compare?$("perf_report_text").value.trim():"",func:compare?"":$("func").value.trim(),no_ai:$("no_ai").checked,build_doc_html:!perf&&!docOnly&&!compare&&$("build_doc_html").checked,refresh_doc_only:docOnly,compare_doc_code:compare,code_branch:local?"":$("code_branch").value.trim(),doc_branch:local||perf?"":$("doc_branch").value.trim()};
+  await startTask(payload);
 };
 document.addEventListener("keydown",e=>{if(!(e.ctrlKey||e.metaKey)||e.key!=="Enter")return;if($("codeChatDialog").open){e.preventDefault();$("codeChatForm").requestSubmit();return;}if(document.querySelector("dialog[open]"))return;e.preventDefault();$("taskForm").requestSubmit();});
 

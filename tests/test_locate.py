@@ -25,6 +25,56 @@ class ExistingDocLocateTests(unittest.TestCase):
             "syslabHelpSourceCode/projects/TyMath/Doc/TyMath/DifferentialEquations/ode89.md",
         )
 
+    def test_pasted_content_selects_the_unique_matching_document(self):
+        paths = [
+            "syslabHelpSourceCode/projects/MultiLanguage/Doc/MultiLanguage/sample.md",
+            "syslabHelpSourceCode/projects/TyStatistics/Doc/TyStatistics/sample.md",
+        ]
+        contents = {
+            paths[0]: "# sample\nMATLAB syntax with Name Value pairs and normal data.",
+            paths[1]: "# sample\nTyStatistics syntax uses alpha, dist and mctol parameters.",
+        }
+        with (
+            patch("pipeline.locate.repo_mod.files_at_revision", return_value=paths),
+            patch(
+                "pipeline.locate.repo_mod.read_text_at_revision",
+                side_effect=lambda _repo, _revision, path: contents[path],
+            ),
+        ):
+            result = locate.match_existing_doc_content(
+                Path("unused"), "sample", "origin/develop",
+                "SAMPLE - TyStatistics syntax uses ALPHA, DIST and MCTOL parameters.",
+            )
+
+        self.assertEqual(result["relative_path"], paths[1])
+        self.assertGreater(result["score"], result["scores"][1]["score"])
+
+    def test_pasted_content_must_distinguish_between_candidates(self):
+        paths = [
+            "syslabHelpSourceCode/projects/One/Doc/One/sample.md",
+            "syslabHelpSourceCode/projects/Two/Doc/Two/sample.md",
+        ]
+        shared = "# sample\nThis shared introduction describes the same function syntax."
+        with (
+            patch("pipeline.locate.repo_mod.files_at_revision", return_value=paths),
+            patch("pipeline.locate.repo_mod.read_text_at_revision", return_value=shared),
+        ):
+            with self.assertRaisesRegex(locate.LocateError, "无法唯一匹配"):
+                locate.match_existing_doc_content(
+                    Path("unused"), "sample", "origin/develop", shared
+                )
+
+    def test_preferred_document_must_be_a_revision_candidate(self):
+        path = "syslabHelpSourceCode/projects/TyStatistics/Doc/sample.md"
+        with patch(
+            "pipeline.locate.repo_mod.files_at_revision", return_value=[path]
+        ):
+            with self.assertRaisesRegex(locate.LocateError, "不属于.*候选"):
+                locate.read_existing_doc_md(
+                    Path("unused"), "sample", "origin/develop",
+                    preferred_path="syslabHelpSourceCode/projects/Other/Doc/sample.md",
+                )
+
 
 class RepositoryUnitTestLocateTests(unittest.TestCase):
     @staticmethod

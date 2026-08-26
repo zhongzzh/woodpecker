@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import os
 import re
+import unicodedata
 from pathlib import Path, PurePosixPath
 
 from . import config
@@ -308,10 +309,8 @@ def find_doc_md(docs_repo: Path, func: str, base: str, log=print) -> Path:
     raise LocateError(f"projects 下有多个 {func}.md，无法确定: {[str(h) for h in hits]}")
 
 
-def read_existing_doc_md(
-    docs_repo: Path, func: str, revision: str, log=print
-) -> dict:
-    """从既有文档基线读取函数 md，不 checkout 文档仓库工作区（性能优化任务）。"""
+def existing_doc_paths(docs_repo: Path, func: str, revision: str) -> list[str]:
+    """列出既有文档基线中的同名函数文档，并应用可靠的项目优先规则。"""
     try:
         paths = repo_mod.files_at_revision(docs_repo, revision)
     except repo_mod.GitError as exc:
@@ -333,9 +332,92 @@ def read_existing_doc_md(
         if "projects/TyMath/Doc/" in p.replace("\\", "/")
     ]
     if len(tymath_hits) == 1:
-        if len(hits) > 1:
-            log(f"  同名文档共 {len(hits)} 个，数学库任务选用 projects/TyMath/Doc 下版本")
         hits = tymath_hits
+    return sorted(hits)
+
+
+def _normalized_doc_content(text: str) -> str:
+    """忽略 Markdown 标记、空白、大小写和全半角差异后比较正文内容。"""
+    normalized = unicodedata.normalize("NFKC", text).casefold()
+    return "".join(character for character in normalized if character.isalnum())
+
+
+def _doc_content_similarity(reference: str, candidate: str) -> float:
+    """用字符片段 Dice/包含度计算线性复杂度的正文相似度。"""
+    if not reference or not candidate:
+        return 0.0
+    if reference == candidate:
+        return 1.0
+    width = 7
+    reference_fragments = {
+        reference[index:index + width]
+        for index in range(max(1, len(reference) - width + 1))
+    }
+    candidate_fragments = {
+        candidate[index:index + width]
+        for index in range(max(1, len(candidate) - width + 1))
+    }
+    overlap = len(reference_fragments & candidate_fragments)
+    if not overlap:
+        return 0.0
+    dice = 2 * overlap / (len(reference_fragments) + len(candidate_fragments))
+    containment = overlap / min(len(reference_fragments), len(candidate_fragments))
+    return max(dice, containment)
+
+
+def match_existing_doc_content(
+    docs_repo: Path, func: str, revision: str, reference_text: str
+) -> dict:
+    """用用户提供的文档正文从同名候选中选出唯一且可信的一份。"""
+    reference = _normalized_doc_content(reference_text)
+    if len(reference) < 24:
+        raise LocateError("粘贴的文档有效内容过短，请粘贴更完整的函数文档")
+
+    candidates = existing_doc_paths(docs_repo, func, revision)
+    scored = []
+    for relative_path in candidates:
+        try:
+            candidate_text = repo_mod.read_text_at_revision(
+                docs_repo, revision, relative_path
+            )
+        except repo_mod.GitError as exc:
+            raise LocateError(str(exc)) from exc
+        candidate = _normalized_doc_content(candidate_text)
+        score = _doc_content_similarity(reference, candidate)
+        scored.append({"relative_path": relative_path, "score": score})
+
+    scored.sort(key=lambda item: (-item["score"], item["relative_path"]))
+    best = scored[0]
+    runner_up = scored[1]["score"] if len(scored) > 1 else 0.0
+    if best["score"] < 0.55 or (
+        len(scored) > 1 and best["score"] - runner_up < 0.06
+    ):
+        summary = "；".join(
+            f"{item['relative_path']}={item['score']:.0%}" for item in scored
+        )
+        raise LocateError(
+            "粘贴内容无法唯一匹配候选文档，请粘贴更完整的内容。"
+            f"当前相似度：{summary}"
+        )
+    return {**best, "scores": scored}
+
+
+def read_existing_doc_md(
+    docs_repo: Path, func: str, revision: str, log=print,
+    preferred_path: str = "",
+) -> dict:
+    """从既有文档基线读取函数 md，不 checkout 文档仓库工作区（性能优化任务）。"""
+    hits = existing_doc_paths(docs_repo, func, revision)
+    selected = preferred_path.strip().replace("\\", "/")
+    if selected:
+        if selected not in hits:
+            raise LocateError(
+                f"指定的既有文档不属于 {revision} 中 {func}.md 的候选：{selected}"
+            )
+        hits = [selected]
+    elif len(hits) == 1 and "projects/TyMath/Doc/" in hits[0].replace("\\", "/"):
+        # 保留原有自动选择规则的可见日志。
+        log("  数学库任务选用 projects/TyMath/Doc 下版本")
     if len(hits) > 1:
         raise LocateError(f"{revision} 中有多个 {func}.md，无法确定: {hits}")
     try:

@@ -84,6 +84,17 @@ class CodeChatUiContractTests(unittest.TestCase):
         self.assertIn("refresh_doc_only:docOnly", self.html)
         self.assertIn('s.job_mode==="refresh_doc_only"', self.html)
 
+    def test_duplicate_existing_docs_open_content_matching_dialog(self):
+        dialog = self.elements.by_id["docDisambiguationDialog"]
+        editor = self.elements.by_id["docReferenceText"]
+
+        self.assertEqual(dialog["tag"], "dialog")
+        self.assertEqual(editor["tag"], "textarea")
+        self.assertEqual(editor["maxlength"], "1000000")
+        self.assertIn("data.needs_doc_disambiguation", self.html)
+        self.assertIn('api("/api/resolve-existing-doc"', self.html)
+        self.assertIn("existing_doc_path:data.relative_path", self.html)
+
 
 if __name__ == "__main__":
     unittest.main()

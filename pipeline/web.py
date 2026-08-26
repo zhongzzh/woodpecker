@@ -8,6 +8,7 @@ stdout 逐行收进日志，「中止」= 强杀子进程树（连带 playwright
 接口：
   GET  /                     单页 UI
   POST /api/run              在线 MR 或本地材料任务
+  POST /api/resolve-existing-doc  用粘贴正文消歧性能任务的同名既有文档
   POST /api/select-local     打开本机文件选择器（代码/单测或文档）
   POST /api/parse-input      {text} → 从整段粘贴内容提取任务名与 MR
   POST /api/stop             中止当前任务（杀子进程树）
@@ -43,7 +44,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
-from . import analyze, code_chat, config, locate, login, paste
+from . import analyze, code_chat, config, locate, login, paste, repo
 from .taskcard import TaskCard
 from .windows_dpi import enable_high_dpi
 
@@ -252,7 +253,54 @@ def _build_argv(payload: dict) -> list[str]:
         argv += ["--refresh-doc-only"]
     if payload.get("perf_report_file", "").strip():
         argv += ["--perf-report-file", payload["perf_report_file"].strip()]
+    if payload.get("existing_doc_path", "").strip():
+        argv += ["--existing-doc-path", payload["existing_doc_path"].strip()]
     return argv
+
+
+def _preflight_existing_doc(card: TaskCard, payload: dict) -> dict | None:
+    """性能任务启动前检查同名既有文档，歧义时返回可展示的候选路径。"""
+    if card.is_local or card.is_new_function:
+        return None
+    docs_repo = repo.ensure_repo(
+        config.DOCS_REPO_PROJECT, log=lambda _message: None,
+        local_path=config.DOCS_REPO_DIR,
+    )
+    repo.refresh_repo(docs_repo, log=lambda _message: None)
+    candidates = locate.existing_doc_paths(
+        docs_repo, card.func, config.DOCS_DEFAULT_BASE
+    )
+    selected = str(payload.get("existing_doc_path", "")).strip().replace("\\", "/")
+    if selected:
+        if selected not in candidates:
+            raise locate.LocateError(
+                f"指定文档已不在 {config.DOCS_DEFAULT_BASE} 的候选中，请重新匹配"
+            )
+        payload["existing_doc_path"] = selected
+        return None
+    if len(candidates) == 1:
+        payload["existing_doc_path"] = candidates[0]
+        return None
+    return {
+        "func": card.func,
+        "revision": config.DOCS_DEFAULT_BASE,
+        "candidates": candidates,
+    }
+
+
+def _resolve_existing_doc(func: str, reference_text: str) -> dict:
+    """在本地文档仓库中用用户粘贴正文匹配既有文档候选。"""
+    if not func.strip():
+        raise locate.LocateError("函数名不能为空")
+    if len(reference_text) > 1_000_000:
+        raise locate.LocateError("粘贴内容不能超过 100 万字符")
+    docs_repo = repo.ensure_repo(
+        config.DOCS_REPO_PROJECT, log=lambda _message: None,
+        local_path=config.DOCS_REPO_DIR,
+    )
+    return locate.match_existing_doc_content(
+        docs_repo, func.strip(), config.DOCS_DEFAULT_BASE, reference_text
+    )
 
 
 def _hidden_process_kwargs() -> dict:
@@ -873,6 +921,15 @@ class Handler(BaseHTTPRequestHandler):
                 self._json({"ok": True, "path": selected, "cancelled": not bool(selected)})
             except (RuntimeError, ValueError) as e:
                 self._json({"ok": False, "message": str(e)}, 400)
+        elif path == "/api/resolve-existing-doc":
+            try:
+                result = _resolve_existing_doc(
+                    str(payload.get("func", "")),
+                    str(payload.get("reference_text", "")),
+                )
+                self._json({"ok": True, **result})
+            except (locate.LocateError, repo.GitError) as e:
+                self._json({"ok": False, "message": str(e)}, 400)
         elif path == "/api/run":
             input_mode = str(payload.get("input_mode", "remote")).strip().lower() or "remote"
             refresh_doc_only = bool(payload.get("refresh_doc_only"))
@@ -934,9 +991,18 @@ class Handler(BaseHTTPRequestHandler):
                     _ = card.code_project
                     if card.is_new_function:
                         _ = card.doc_project
+                    ambiguity = _preflight_existing_doc(card, payload)
+                    if ambiguity:
+                        self._json({
+                            "ok": False,
+                            "needs_doc_disambiguation": True,
+                            "message": "发现多个同名既有文档，请粘贴正确文档的内容进行匹配",
+                            **ambiguity,
+                        }, 409)
+                        return
                     payload["perf_report_text"] = ""
                 payload["input_mode"] = input_mode
-            except (locate.LocateError, ValueError) as e:
+            except (locate.LocateError, repo.GitError, ValueError) as e:
                 self._json({"ok": False, "message": f"输入有误: {e}"}, 400)
                 return
             ok, message = _start_job(payload)
